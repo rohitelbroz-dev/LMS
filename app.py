@@ -1165,7 +1165,6 @@ def new_lead():
     
     cursor.execute('SELECT * FROM services ORDER BY name')
     services = cursor.fetchall()
-    conn.close()
     
     form = LeadForm()
     form.services.choices = [(s['id'], s['name']) for s in services]
@@ -1239,6 +1238,8 @@ def new_lead():
                 assigned_manager_id = other_manager['id']
             assignment_method = 'random'
         
+        services_csv = ','.join([str(s) for s in form.services.data])
+        
         cursor.execute('''
             INSERT INTO leads (submitted_by_user_id, full_name, email, phone, company, domain, 
                              industry, services_csv, country, state, city, attachment_path, status, 
@@ -1308,6 +1309,7 @@ def new_lead():
         flash('Lead submitted successfully!', 'success')
         return redirect(url_for('dashboard'))
     
+    conn.close()
     return render_template('lead_form.html', form=form, title='Submit New Lead')
 
 @app.route('/lead/<int:lead_id>')
