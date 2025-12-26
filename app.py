@@ -586,11 +586,28 @@ def has_period_overlap(assignee_id, period_start, period_end, exclude_id=None):
 
 def check_and_reassign_overdue_leads():
     """Check for overdue lead assignments and reassign them"""
+    start_time = time.time()
     with app.app_context():
         conn = get_db()
         cursor = conn.cursor()
         
         try:
+            cursor.execute('''
+                SELECT COUNT(*) as count FROM lead_assignments la
+                JOIN leads l ON la.lead_id = l.id
+                WHERE la.status = 'pending'
+                  AND la.deadline_at < CURRENT_TIMESTAMP
+                  AND l.status IN ('Pending', 'Resubmitted')
+            ''')
+            
+            overdue_count = cursor.fetchone()['count']
+            if overdue_count == 0:
+                print(f'No overdue assignments found')
+                conn.close()
+                return
+            
+            print(f'Found {overdue_count} overdue assignments, processing...')
+            
             cursor.execute('''
                 SELECT la.id as assignment_id, la.lead_id, la.manager_id, la.deadline_at, 
                        la.is_initial_assignment, l.company, l.full_name, u.name as manager_name
@@ -600,6 +617,8 @@ def check_and_reassign_overdue_leads():
                 WHERE la.status = 'pending'
                   AND la.deadline_at < CURRENT_TIMESTAMP
                   AND l.status IN ('Pending', 'Resubmitted')
+                ORDER BY la.deadline_at ASC
+                LIMIT 10
             ''')
             
             overdue_assignments = cursor.fetchall()
@@ -672,6 +691,8 @@ def check_and_reassign_overdue_leads():
                 print(f'Reassigned lead {lead_id} from manager {old_manager_id} to {new_manager_id}')
             
             safe_commit(conn, context="check_and_reassign_overdue_leads")
+            end_time = time.time()
+            print(f'Processed {len(overdue_assignments)} overdue assignments in {end_time - start_time:.2f} seconds')
             
         except Exception as e:
             print(f'Error in reassignment check: {str(e)}')
@@ -681,11 +702,28 @@ def check_and_reassign_overdue_leads():
 
 def check_and_send_activity_reminders():
     """Check for activity reminders that are due and send notifications"""
+    start_time = time.time()
     with app.app_context():
         conn = get_db()
         cursor = conn.cursor()
         
         try:
+            # Count reminders first
+            cursor.execute('''
+                SELECT COUNT(*) as count FROM lead_activities la
+                WHERE la.reminder_at IS NOT NULL 
+                  AND la.reminder_at <= NOW()
+                  AND la.completed_at IS NULL
+            ''')
+            
+            reminder_count = cursor.fetchone()['count']
+            if reminder_count == 0:
+                print('No activity reminders due')
+                conn.close()
+                return
+            
+            print(f'Found {reminder_count} activity reminders due, processing...')
+            
             # Find activities with reminders due (reminder_at is now or past) and not completed
             cursor.execute('''
                 SELECT la.id, la.lead_id, la.actor_id, la.activity_type, la.title, 
@@ -697,6 +735,8 @@ def check_and_send_activity_reminders():
                 WHERE la.reminder_at IS NOT NULL 
                   AND la.reminder_at <= NOW()
                   AND la.completed_at IS NULL
+                ORDER BY la.reminder_at ASC
+                LIMIT 20
             ''')
             
             activities_with_reminders = cursor.fetchall()
@@ -741,7 +781,8 @@ def check_and_send_activity_reminders():
                 print(f'Sent reminder for activity {activity_id} to user {actor_id}: {notification_msg}')
             
             safe_commit(conn, context="check_and_send_activity_reminders")
-            print(f'Processed {len(activities_with_reminders)} activity reminders')
+            end_time = time.time()
+            print(f'Processed {len(activities_with_reminders)} activity reminders in {end_time - start_time:.2f} seconds')
             
         except Exception as e:
             print(f'Error in reminder check: {str(e)}')
@@ -871,40 +912,86 @@ def dashboard():
         query += ' AND DATE(created_at) <= %s'
         params.append(date_to)
     
-    query += ' ORDER BY created_at DESC'
+    # Get all leads with submitter info and deadlines in single queries
+    if current_user.role == 'marketer':
+        base_query = '''
+            SELECT l.*, u.name as submitter_name, la.deadline_at,
+                   CASE WHEN la.deadline_at < CURRENT_TIMESTAMP THEN 1 ELSE 0 END as is_overdue
+            FROM leads l
+            LEFT JOIN users u ON l.submitted_by_user_id = u.id
+            LEFT JOIN lead_assignments la ON l.id = la.lead_id 
+                AND la.status = 'pending' 
+                AND la.deadline_at = (
+                    SELECT MAX(deadline_at) FROM lead_assignments 
+                    WHERE lead_id = l.id AND status = 'pending'
+                )
+            WHERE l.submitted_by_user_id = %s
+        '''
+        params = [current_user.id]
+    elif current_user.role == 'bd_sales':
+        base_query = '''
+            SELECT l.*, u.name as submitter_name, la.deadline_at,
+                   CASE WHEN la.deadline_at < CURRENT_TIMESTAMP THEN 1 ELSE 0 END as is_overdue
+            FROM leads l
+            LEFT JOIN users u ON l.submitted_by_user_id = u.id
+            LEFT JOIN lead_assignments la ON l.id = la.lead_id 
+                AND la.status = 'pending' 
+                AND la.deadline_at = (
+                    SELECT MAX(deadline_at) FROM lead_assignments 
+                    WHERE lead_id = l.id AND status = 'pending'
+                )
+            WHERE l.assigned_bd_id = %s
+        '''
+        params = [current_user.id]
+    else:
+        base_query = '''
+            SELECT l.*, u.name as submitter_name, la.deadline_at,
+                   CASE WHEN la.deadline_at < CURRENT_TIMESTAMP THEN 1 ELSE 0 END as is_overdue
+            FROM leads l
+            LEFT JOIN users u ON l.submitted_by_user_id = u.id
+            LEFT JOIN lead_assignments la ON l.id = la.lead_id 
+                AND la.status = 'pending' 
+                AND la.deadline_at = (
+                    SELECT MAX(deadline_at) FROM lead_assignments 
+                    WHERE lead_id = l.id AND status = 'pending'
+                )
+            WHERE 1=1
+        '''
+        params = []
     
-    cursor.execute(query, params)
-    leads = cursor.fetchall()  # Already filtered by role (marketer, bd_sales, or admin/manager)
+    if status_filter:
+        base_query += ' AND l.status = %s'
+        params.append(status_filter)
     
-    # Enrich filtered leads with submitter info and deadlines
-    # BD Sales will only iterate over their assigned leads from the filtered query above
+    if service_filter:
+        base_query += ' AND (l.services_csv LIKE %s OR l.services_csv LIKE %s OR l.services_csv LIKE %s OR l.services_csv = %s)'
+        params.extend([f'{service_filter},%', f'%,{service_filter},%', f'%,{service_filter}', service_filter])
+    
+    if submitter_filter and current_user.role in ['admin', 'manager']:
+        base_query += ' AND l.submitted_by_user_id = %s'
+        params.append(submitter_filter)
+    
+    if date_from:
+        base_query += ' AND DATE(l.created_at) >= %s'
+        params.append(date_from)
+    
+    if date_to:
+        base_query += ' AND DATE(l.created_at) <= %s'
+        params.append(date_to)
+    
+    base_query += ' ORDER BY l.created_at DESC'
+    
+    cursor.execute(base_query, params)
+    leads_raw = cursor.fetchall()
+    
+    # Format leads for template
     leads_with_submitters = []
-    for lead in leads:
-        cursor.execute('SELECT name FROM users WHERE id = %s', (lead['submitted_by_user_id'],))
-        submitter = cursor.fetchone()
-        
-        deadline = None
-        is_overdue = False
-        if lead['status'] in ['Pending', 'Resubmitted']:
-            cursor.execute('''
-                SELECT deadline_at FROM lead_assignments 
-                WHERE lead_id = %s AND status = 'pending'
-                ORDER BY assigned_at DESC LIMIT 1
-            ''', (lead['id'],))
-            deadline_row = cursor.fetchone()
-            if deadline_row and deadline_row['deadline_at']:
-                deadline = deadline_row['deadline_at']
-                try:
-                    deadline_dt = datetime.strptime(deadline, '%Y-%m-%d %H:%M:%S')
-                    is_overdue = deadline_dt < datetime.now()
-                except:
-                    pass
-        
+    for lead in leads_raw:
         leads_with_submitters.append({
             'lead': lead,
-            'submitter_name': submitter['name'] if submitter else 'Unknown',
-            'deadline': deadline,
-            'is_overdue': is_overdue
+            'submitter_name': lead['submitter_name'] or 'Unknown',
+            'deadline': lead['deadline_at'],
+            'is_overdue': bool(lead['is_overdue'])
         })
     
     cursor.execute('SELECT * FROM services ORDER BY name')
@@ -3524,28 +3611,28 @@ add_protected_users_column()
 
 scheduler = BackgroundScheduler()
 
-# Job 1: Check and reassign overdue leads
+# Job 1: Check and reassign overdue leads (every 30 minutes instead of 15)
 scheduler.add_job(
     func=check_and_reassign_overdue_leads,
-    trigger=IntervalTrigger(minutes=15),
+    trigger=IntervalTrigger(minutes=30),
     id='check_overdue_leads',
-    name='Check and reassign overdue leads every 15 minutes',
+    name='Check and reassign overdue leads every 30 minutes',
     replace_existing=True
 )
 
-# Job 2: Check and send activity reminders
+# Job 2: Check and send activity reminders (every hour instead of 30 minutes)
 scheduler.add_job(
     func=check_and_send_activity_reminders,
-    trigger=IntervalTrigger(minutes=30),
+    trigger=IntervalTrigger(hours=1),
     id='check_activity_reminders',
-    name='Check and send activity reminders every 30 minutes',
+    name='Check and send activity reminders every hour',
     replace_existing=True
 )
 
 scheduler.start()
 print('APScheduler started:')
-print('  - Checking for overdue leads every 15 minutes')
-print('  - Checking for activity reminders every 30 minutes')
+print('  - Checking for overdue leads every 30 minutes')
+print('  - Checking for activity reminders every hour')
 
 if __name__ == '__main__':
     try:
