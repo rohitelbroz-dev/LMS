@@ -1,0 +1,66 @@
+Build a Flask + SQLite web app: “Cold Email Lead Dashboard”
+
+User Roles:
+1) Admin
+2) Sales Manager
+3) Email Marketer
+
+Purpose:
+Email Marketers submit leads. Sales Managers review and accept/reject. Admins manage users, services, and all data.
+
+Lead Form Fields:
+- Lead Submitted By (auto: logged-in user’s name)
+- Lead Creation Date & Time (auto: current timestamp)
+- Full Name
+- Email ID
+- Phone Number
+- Company Name
+- Domain Name
+- Services Pitched (multi-select): Design & Development, SEO, SMO, PPC, Digital Marketing, Mobile App
+  * Admin/Sales Manager can add new services
+- Country, State, City
+- Attachment (file upload)
+
+Lead Workflow & Permissions:
+- Default lead status = “Pending”
+- Email Marketer:
+  * Can create leads
+  * Can view only their own leads and their statuses
+  * If a lead is “Rejected”, they can view the rejection comment and “Resubmit” with their own rectification comment. Resubmission sets status to “Resubmitted/Pending Review”.
+- Sales Manager:
+  * Can view all leads
+  * Can Accept or Reject a lead
+  * On Reject, must write a “Rejection Comment” (required)
+  * Can manage Services (add new services)
+  * Can export leads (CSV)
+- Admin:
+  * Full access: users, services, all leads, exports
+  * CRUD for users (set role: admin/manager/marketer)
+
+Notifications:
+- When a lead is Rejected, notify the submitting Email Marketer (in-app notification and mark the lead in their list).
+- When a lead is Accepted, mark as “Accepted”.
+- When a lead is Resubmitted by the Email Marketer, notify Sales Manager for re-review.
+
+Data Model (suggested):
+- users(id, name, email, password_hash, role)
+- services(id, name)
+- leads(id, submitted_by_user_id, created_at, full_name, email, phone, company, domain, services_csv, country, state, city, attachment_path, status[Pending|Rejected|Accepted|Resubmitted])
+- lead_notes(id, lead_id, author_user_id, note_type[rejection|resubmission|system], message, created_at)
+
+UX:
+- Role-based nav
+- Lead table with filters (status, date range, service, submitter)
+- Lead detail page showing comments/history (rejection & resubmission notes)
+- Simple, responsive styling (Bootstrap or Tailwind)
+
+Security:
+- Flask-Login for auth
+- Role-based access control on routes
+- File uploads stored safely with secure filenames (16MB limit is fine)
+
+Deliverables:
+- Flask app with templates (Jinja2), static CSS
+- Seed users: admin@example.com/admin123, manager@example.com/manager123, marketer@example.com/marketer123
+- Seed default services listed above
+- Export leads to CSV (Manager/Admin)

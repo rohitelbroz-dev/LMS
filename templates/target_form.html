@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block authenticated_content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="fas fa-bullseye me-2"></i>{{ title }}
+                </h4>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        {{ form.assignee.label(class="form-label") }}
+                        {{ form.assignee(class="form-select" + (" is-invalid" if form.assignee.errors else "")) }}
+                        {% if form.assignee.errors %}
+                            <div class="invalid-feedback">{{ form.assignee.errors[0] }}</div>
+                        {% endif %}
+                        <small class="form-text text-muted">
+                            {% if current_user.role == 'admin' %}
+                            Select an EM Team Leader to assign this target to
+                            {% else %}
+                            Select an Email Marketer to assign this target to
+                            {% endif %}
+                        </small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.target_count.label(class="form-label") }}
+                        {{ form.target_count(class="form-control" + (" is-invalid" if form.target_count.errors else ""), 
+                                            min="1", max="1000", placeholder="e.g., 50") }}
+                        {% if form.target_count.errors %}
+                            <div class="invalid-feedback">{{ form.target_count.errors[0] }}</div>
+                        {% endif %}
+                        <small class="form-text text-muted">
+                            Number of leads to be 
+                            {% if current_user.role == 'admin' %}accepted{% else %}submitted{% endif %}
+                            during this period
+                        </small>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            {{ form.period_start.label(class="form-label") }}
+                            {{ form.period_start(class="form-control" + (" is-invalid" if form.period_start.errors else "")) }}
+                            {% if form.period_start.errors %}
+                                <div class="invalid-feedback">{{ form.period_start.errors[0] }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            {{ form.period_end.label(class="form-label") }}
+                            {{ form.period_end(class="form-control" + (" is-invalid" if form.period_end.errors else "")) }}
+                            {% if form.period_end.errors %}
+                                <div class="invalid-feedback">{{ form.period_end.errors[0] }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.target_type.label(class="form-label") }}
+                        {{ form.target_type(class="form-select" + (" is-invalid" if form.target_type.errors else "")) }}
+                        {% if form.target_type.errors %}
+                            <div class="invalid-feedback">{{ form.target_type.errors[0] }}</div>
+                        {% endif %}
+                        <small class="form-text text-muted">
+                            Monthly targets typically run from the 1st to the last day of the month
+                        </small>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Note:</strong> Target periods cannot overlap for the same user. 
+                        Make sure the dates you select don't conflict with existing targets.
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('manage_targets') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Cancel
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>
+                            {% if target_id is defined %}Update Target{% else %}Create Target{% endif %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-lightbulb me-2"></i>Tips</h5>
+            </div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    <li><strong>Monthly Targets:</strong> Great for overall performance tracking (e.g., Nov 1 - Nov 30)</li>
+                    <li><strong>Weekly Targets:</strong> Best for short-term goals and sprint planning (e.g., Mon - Sun)</li>
+                    <li><strong>Realistic Goals:</strong> Set achievable targets based on historical performance</li>
+                    <li><strong>Progress Tracking:</strong> Monitor real-time progress on the Targets page</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

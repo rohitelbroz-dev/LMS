@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block authenticated_content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4 fade-in-up">
+    <h1 class="page-title">
+        <i class="fas fa-layer-group me-2"></i>{{ title }}
+    </h1>
+    <a href="{{ url_for('manage_stages') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-2"></i>Back to Stages
+    </a>
+</div>
+
+<div class="container-fluid px-0">
+    <div class="row g-4">
+        <!-- Main Form Column -->
+        <div class="col-lg-8 col-md-12">
+            <div class="card shadow-sm fade-in-up">
+                <div class="card-header bg-gradient-elbroz text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-edit me-2"></i>Stage Information
+                    </h5>
+                </div>
+                <div class="card-body p-4">
+                    <form method="POST" novalidate id="stageForm">
+                        {{ form.hidden_tag() }}
+                        
+                        <!-- Stage Name -->
+                        <div class="mb-4">
+                            {{ form.name.label(class="form-label fw-bold") }}
+                            {{ form.name(class="form-control form-control-lg" + (" is-invalid" if form.name.errors else ""), placeholder="e.g., Lead Contacted, Proposal Sent") }}
+                            {% if form.name.errors %}
+                                <div class="invalid-feedback">
+                                    <i class="fas fa-exclamation-circle me-1"></i>{{ form.name.errors[0] }}
+                                </div>
+                            {% else %}
+                                <small class="form-text text-muted">
+                                    <i class="fas fa-info-circle me-1"></i>The name of the pipeline stage
+                                </small>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Color Picker -->
+                        <div class="mb-4">
+                            {{ form.color.label(class="form-label fw-bold") }}
+                            <div class="input-group input-group-lg">
+                                <span class="input-group-text px-3">
+                                    <div id="colorPreview" style="width: 30px; height: 30px; background-color: {{ stage.color if stage else '#6c757d' }}; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"></div>
+                                </span>
+                                {{ form.color(class="form-control" + (" is-invalid" if form.color.errors else ""), placeholder="#6c757d", id="colorInput") }}
+                                {% if form.color.errors %}
+                                    <div class="invalid-feedback">
+                                        <i class="fas fa-exclamation-circle me-1"></i>{{ form.color.errors[0] }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <small class="form-text text-muted">
+                                <i class="fas fa-palette me-1"></i>Hex color code (e.g., #e76ba6) or select from swatches below
+                            </small>
+                        </div>
+                        
+                        <!-- Description -->
+                        <div class="mb-4">
+                            {{ form.description.label(class="form-label fw-bold") }}
+                            {{ form.description(class="form-control" + (" is-invalid" if form.description.errors else ""), rows="4", placeholder="Optional description of what this stage represents...") }}
+                            {% if form.description.errors %}
+                                <div class="invalid-feedback">
+                                    <i class="fas fa-exclamation-circle me-1"></i>{{ form.description.errors[0] }}
+                                </div>
+                            {% else %}
+                                <small class="form-text text-muted">
+                                    <i class="fas fa-align-left me-1"></i>Optional description (max 500 characters)
+                                </small>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Form Actions -->
+                        <div class="d-flex flex-column flex-sm-row justify-content-between gap-2 mt-4 pt-3 border-top">
+                            <a href="{{ url_for('manage_stages') }}" class="btn btn-outline-secondary btn-lg order-2 order-sm-1">
+                                <i class="fas fa-times me-2"></i>Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary btn-lg order-1 order-sm-2">
+                                <i class="fas fa-save me-2"></i>{% if stage %}Update Stage{% else %}Create Stage{% endif %}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Color Picker Helper Column -->
+        <div class="col-lg-4 col-md-12">
+            <div class="card shadow-sm fade-in-up" style="animation-delay: 0.1s;">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0 fw-bold">
+                        <i class="fas fa-swatchbook me-2"></i>Color Swatches
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">Click a color to apply it to your stage:</p>
+                    
+                    <!-- Elbroz Brand Colors -->
+                    <div class="mb-3">
+                        <small class="text-muted fw-bold d-block mb-2">ELBROZ BRAND COLORS</small>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="button" class="color-swatch-btn" data-color="#e76ba6" style="background-color: #e76ba6;" title="Elbroz Pink">
+                                <i class="fas fa-check text-white" style="opacity: 0;"></i>
+                            </button>
+                            <button type="button" class="color-swatch-btn" data-color="#a855f7" style="background-color: #a855f7;" title="Elbroz Purple">
+                                <i class="fas fa-check text-white" style="opacity: 0;"></i>
+                            </button>
+                            <button type="button" class="color-swatch-btn" data-color="#60a5fa" style="background-color: #60a5fa;" title="Elbroz Blue">
+                                <i class="fas fa-check text-white" style="opacity: 0;"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Additional Colors -->
+                    <div>
+                        <small class="text-muted fw-bold d-block mb-2">MORE COLORS</small>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="button" class="color-swatch-btn" data-color="#28a745" style="background-color: #28a745;" title="Green">
+                                <i class="fas fa-check text-white" style="opacity: 0;"></i>
+                            </button>
+                            <button type="button" class="color-swatch-btn" data-color="#17a2b8" style="background-color: #17a2b8;" title="Cyan">
+                                <i class="fas fa-check text-white" style="opacity: 0;"></i>
+                            </button>
+                            <button type="button" class="color-swatch-btn" data-color="#ffc107" style="background-color: #ffc107;" title="Yellow">
+                                <i class="fas fa-check text-white" style="opacity: 0;"></i>
+                            </button>
+                            <button type="button" class="color-swatch-btn" data-color="#fd7e14" style="background-color: #fd7e14;" title="Orange">
+                                <i class="fas fa-check text-white" style="opacity: 0;"></i>
+                            </button>
+                            <button type="button" class="color-swatch-btn" data-color="#dc3545" style="background-color: #dc3545;" title="Red">
+                                <i class="fas fa-check text-white" style="opacity: 0;"></i>
+                            </button>
+                            <button type="button" class="color-swatch-btn" data-color="#6c757d" style="background-color: #6c757d;" title="Gray">
+                                <i class="fas fa-check text-white" style="opacity: 0;"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Help Card -->
+            <div class="card shadow-sm mt-3 fade-in-up" style="animation-delay: 0.2s;">
+                <div class="card-body">
+                    <h6 class="fw-bold mb-3">
+                        <i class="fas fa-lightbulb me-2 text-warning"></i>Tips
+                    </h6>
+                    <ul class="small text-muted mb-0 ps-3">
+                        <li class="mb-2">Choose distinct colors for different stages</li>
+                        <li class="mb-2">Use warm colors (red, orange) for urgent stages</li>
+                        <li class="mb-2">Use cool colors (blue, green) for completed stages</li>
+                        <li>Brand colors help maintain consistency</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const colorInput = document.getElementById('colorInput');
+    const colorPreview = document.getElementById('colorPreview');
+    const colorSwatches = document.querySelectorAll('.color-swatch-btn');
+    
+    // Update preview when user types
+    colorInput.addEventListener('input', function() {
+        const color = this.value || '#6c757d';
+        colorPreview.style.backgroundColor = color;
+        updateActiveSwatchIndicator(color);
+    });
+    
+    // Click swatch to set color
+    colorSwatches.forEach(swatch => {
+        swatch.addEventListener('click', function(e) {
+            e.preventDefault();
+            const color = this.dataset.color;
+            colorInput.value = color;
+            colorPreview.style.backgroundColor = color;
+            updateActiveSwatchIndicator(color);
+            
+            // Add ripple effect
+            this.classList.add('swatch-clicked');
+            setTimeout(() => this.classList.remove('swatch-clicked'), 300);
+        });
+    });
+    
+    // Update active indicator on swatches
+    function updateActiveSwatchIndicator(color) {
+        colorSwatches.forEach(swatch => {
+            const checkIcon = swatch.querySelector('i');
+            if (swatch.dataset.color.toLowerCase() === color.toLowerCase()) {
+                checkIcon.style.opacity = '1';
+                swatch.style.transform = 'scale(1.1)';
+            } else {
+                checkIcon.style.opacity = '0';
+                swatch.style.transform = 'scale(1)';
+            }
+        });
+    }
+    
+    // Initialize with current color
+    if (colorInput.value) {
+        updateActiveSwatchIndicator(colorInput.value);
+    }
+});
+</script>
+
+<style>
+/* Color swatch buttons */
+.color-swatch-btn {
+    width: 50px;
+    height: 50px;
+    border: 3px solid #e9ecef;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    position: relative;
+    overflow: hidden;
+}
+
+.color-swatch-btn:hover {
+    border-color: #495057;
+    transform: scale(1.15) !important;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    z-index: 1;
+}
+
+.color-swatch-btn:active {
+    transform: scale(0.95) !important;
+}
+
+.color-swatch-btn i {
+    font-size: 1.2rem;
+    transition: opacity 0.2s;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.swatch-clicked {
+    animation: swatchPulse 0.3s ease-out;
+}
+
+@keyframes swatchPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+}
+
+/* Elbroz gradient header */
+.bg-gradient-elbroz {
+    background: linear-gradient(135deg, #e76ba6 0%, #a855f7 50%, #60a5fa 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.bg-gradient-elbroz::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    animation: shimmer 3s infinite;
+}
+
+@keyframes shimmer {
+    0%, 100% { transform: translate(-25%, -25%); }
+    50% { transform: translate(25%, 25%); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .color-swatch-btn {
+        width: 45px;
+        height: 45px;
+    }
+}
+
+@media (max-width: 576px) {
+    .btn-lg {
+        padding: 0.75rem 1.5rem;
+        font-size: 1rem;
+    }
+    
+    .form-control-lg {
+        font-size: 1rem;
+    }
+}
+
+/* Fade-in animation */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-in-up {
+    animation: fadeInUp 0.5s ease-out;
+}
+</style>
+{% endblock %}

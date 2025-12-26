@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Elbroz{% endblock %}
+
+{% block unauthenticated_content %}
+<div class="login-container">
+    <div class="login-card">
+        <div class="login-header text-center mb-4">
+            <img src="{{ url_for('static', filename='img/elbroz-logo.webp') }}" alt="Elbroz" class="login-logo mb-3">
+            <h2 class="login-title">Welcome to Elbroz</h2>
+            <p class="text-muted">Lead Management System</p>
+        </div>
+        
+        <form method="POST" action="{{ url_for('login') }}">
+            {{ form.hidden_tag() }}
+            
+            <div class="mb-3">
+                {{ form.email.label(class="form-label") }}
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-envelope"></i></span>
+                    {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else ""), placeholder="Enter your email") }}
+                    {% if form.email.errors %}
+                        <div class="invalid-feedback">
+                            {% for error in form.email.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                {{ form.password.label(class="form-label") }}
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-lock"></i></span>
+                    {{ form.password(class="form-control" + (" is-invalid" if form.password.errors else ""), placeholder="Enter your password") }}
+                    {% if form.password.errors %}
+                        <div class="invalid-feedback">
+                            {% for error in form.password.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-elbroz w-100 mb-4">
+                <i class="fas fa-sign-in-alt me-2"></i>Login
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Confirm Delete User{% endblock %}
+
+{% block authenticated_content %}
+<div class="container" style="max-width: 800px;">
+    <div class="mb-4">
+        <a href="{{ url_for('manage_users') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Users
+        </a>
+    </div>
+    
+    <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+            <h4 class="mb-0"><i class="fas fa-exclamation-triangle"></i> Confirm User Deletion</h4>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-circle"></i>
+                <strong>Warning!</strong> You are about to delete the following user:
+            </div>
+            
+            <div class="mb-4">
+                <h5>User Information</h5>
+                <table class="table table-sm">
+                    <tr>
+                        <th width="150">Name:</th>
+                        <td>{{ user.name }}</td>
+                    </tr>
+                    <tr>
+                        <th>Email:</th>
+                        <td>{{ user.email }}</td>
+                    </tr>
+                    <tr>
+                        <th>Role:</th>
+                        <td>
+                            {% if user.role == 'admin' %}
+                            <span class="badge bg-danger">Admin</span>
+                            {% elif user.role == 'manager' %}
+                            <span class="badge bg-primary">EM Team Leader</span>
+                            {% elif user.role == 'bd_sales' %}
+                            <span class="badge bg-info">BD Sales</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Email Marketer</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            
+            <div class="mb-4">
+                <h5>Data Summary</h5>
+                <p class="text-muted">This user has the following associated data:</p>
+                <ul class="list-group">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Leads Submitted
+                        <span class="badge bg-gradient rounded-pill">{{ data_summary.leads_submitted }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Activities Created
+                        <span class="badge bg-gradient rounded-pill">{{ data_summary.activities }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Currently Assigned Leads
+                        <span class="badge bg-gradient rounded-pill">{{ data_summary.assigned_leads }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        BD Sales Leads
+                        <span class="badge bg-gradient rounded-pill">{{ data_summary.bd_leads }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Targets
+                        <span class="badge bg-gradient rounded-pill">{{ data_summary.targets }}</span>
+                    </li>
+                </ul>
+            </div>
+            
+            <form method="POST" action="{{ url_for('delete_user', user_id=user.id) }}">
+                {% if data_summary.leads_submitted > 0 or data_summary.activities > 0 or data_summary.assigned_leads > 0 or data_summary.bd_leads > 0 or data_summary.targets > 0 %}
+                <div class="mb-4">
+                    <h5 class="text-primary">Transfer Data to Another User</h5>
+                    <p class="text-muted">Select a replacement user from the same role to transfer all data, or leave unselected to delete all data permanently.</p>
+                    
+                    {% if replacement_users %}
+                    <div class="form-group">
+                        <label for="replacement_user_id" class="form-label">Replacement {{ role_labels.get(user.role, user.role) }} (Optional)</label>
+                        <select name="replacement_user_id" id="replacement_user_id" class="form-select">
+                            <option value="">-- Delete all data (no transfer) --</option>
+                            {% for replacement in replacement_users %}
+                            <option value="{{ replacement.id }}">{{ replacement.name }} ({{ replacement.email }})</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">
+                            If selected, all leads, activities, and assignments will be transferred to this user.
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        No other {{ role_labels.get(user.role, user.role) }} users available for data transfer. All data will be deleted.
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+                
+                <div class="form-check mb-4">
+                    <input class="form-check-input" type="checkbox" id="confirm_delete" required>
+                    <label class="form-check-label text-danger fw-bold" for="confirm_delete">
+                        I understand this action cannot be undone
+                    </label>
+                </div>
+                
+                <div class="d-flex justify-content-between">
+                    <a href="{{ url_for('manage_users') }}" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Cancel
+                    </a>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash"></i> Delete User
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,42 @@
+modules = ["python-3.11", "postgresql-16"]
+[agent]
+expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "flask_app"
+
+[[workflows.workflow]]
+name = "flask_app"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python app.py"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[nix]
+channel = "stable-25_05"
+packages = ["iana-etc"]
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["gunicorn", "--worker-class", "eventlet", "-w", "1", "--bind", "0.0.0.0:5000", "--reuse-port", "app:app"]
+
+[objectStorage]
+defaultBucketID = "replit-objstore-7a8ea0d5-7c72-4550-86e6-884f165888b0"

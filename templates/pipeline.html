@@ -1,0 +1,1134 @@
+{% extends "base.html" %}
+
+{% block title %}Sales Pipeline{% endblock %}
+
+{% block authenticated_content %}
+<div class="fade-in-up">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="page-title">
+            <i class="fas fa-project-diagram me-2"></i>Sales Pipeline
+        </h1>
+        {% if current_user.role == 'admin' %}
+        <a href="{{ url_for('manage_stages') }}" class="btn btn-outline-primary">
+            <i class="fas fa-cog me-1"></i>Manage Stages
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Pipeline Stats -->
+    <div class="row mb-4">
+        {% for stage_data in stages %}
+        <div class="col-md-{{ 12 // stages|length if stages|length <= 4 else '3' }} col-sm-6 mb-3">
+            <div class="stat-card" style="border-left: 4px solid {{ stage_data.stage.color or '#6c757d' }};">
+                <h3>{{ stage_data.count }}</h3>
+                <p>{{ stage_data.stage.name }}</p>
+                <i class="fas fa-layer-group"></i>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Scroll Hint -->
+    <div class="scroll-hint mb-3">
+        <i class="fas fa-arrows-alt-h me-2"></i>
+        <span>Scroll horizontally or drag to move leads between stages</span>
+    </div>
+
+    <!-- Pipeline Kanban Board -->
+    <div class="pipeline-wrapper card">
+        <!-- Scroll Navigation Arrows -->
+        <button class="scroll-arrow scroll-arrow-left" id="scrollLeft" aria-label="Scroll left">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <button class="scroll-arrow scroll-arrow-right" id="scrollRight" aria-label="Scroll right">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+        
+        <div class="pipeline-scroll-container" id="pipelineScroll">
+            <div class="pipeline-board">
+                {% for stage_data in stages %}
+                <div class="pipeline-column">
+                    <div class="pipeline-column-header" style="background:var(--elbroz-gradient);">
+                        <div class="d-flex justify-content-between align-items-center w-100 gap-2">
+                            <h5 class="mb-0 text-white flex-grow-1">
+                                {{ stage_data.stage.name }}
+                            </h5>
+                            <span class="badge rounded-pill bg-white text-dark fw-bold">{{ stage_data.count }}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="pipeline-column-body" 
+                         id="stage-{{ stage_data.stage.id }}" 
+                         data-stage-id="{{ stage_data.stage.id }}"
+                         data-stage-name="{{ stage_data.stage.name }}">
+                        
+                        {% for lead in stage_data.leads %}
+                        <div class="pipeline-card" data-lead-id="{{ lead.id }}">
+                            <!-- Card Header -->
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div class="flex-grow-1 min-w-0">
+                                    <h6 class="card-company mb-1">
+                                        <a href="{{ url_for('view_lead', lead_id=lead.id) }}" class="text-dark text-decoration-none" title="{{ lead.company or lead.full_name }}">
+                                            {{ lead.company or lead.full_name }}
+                                        </a>
+                                    </h6>
+                                    <p class="card-contact mb-0" title="{{ lead.full_name }}">
+                                        {{ lead.full_name }}
+                                    </p>
+                                </div>
+                                {% if lead.deal_amount %}
+                                <span class="badge bg-success-gradient deal-badge ms-2">
+                                    ${{ "{:,.0f}".format(lead.deal_amount) }}
+                                </span>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- Contact Info -->
+                            <div class="card-details mb-2">
+                                <div class="detail-item" title="{{ lead.email }}">
+                                    <i class="fas fa-envelope text-primary"></i>
+                                    <small>{{ lead.email }}</small>
+                                </div>
+                                {% if lead.phone %}
+                                <div class="detail-item" title="{{ lead.phone }}">
+                                    <i class="fas fa-phone text-success"></i>
+                                    <small>{{ lead.phone }}</small>
+                                </div>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- BD Sales Assignment -->
+                            {% if lead.bd_name %}
+                            <div class="card-assignee mb-2">
+                                <img src="{{ get_avatar_url(lead.assigned_bd_id) }}" 
+                                     alt="{{ lead.bd_name }}" 
+                                     class="avatar-sm">
+                                <small class="text-muted text-truncate" title="{{ lead.bd_name }}">{{ lead.bd_name }}</small>
+                            </div>
+                            {% endif %}
+                            
+                            <!-- Card Footer -->
+                            <div class="card-footer-info">
+                                <small class="text-muted">
+                                    <i class="far fa-calendar me-1"></i>{{ format_indian_datetime(lead.created_at, 'date') }}
+                                </small>
+                                <span class="badge badge-status-{{ lead.status.lower() }}">
+                                    {{ lead.status }}
+                                </span>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="empty-column">
+                            <i class="fas fa-inbox fa-3x mb-3 text-muted opacity-50"></i>
+                            <p class="text-muted">No leads in this stage</p>
+                            <small class="text-muted">Drag leads here</small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Elbroz Gradient Colors */
+:root {
+    --elbroz-gradient: linear-gradient(135deg, #ec4899 0%, #a855f7 50%, #3b82f6 100%);
+    --elbroz-pink: #ec4899;
+    --elbroz-purple: #a855f7;
+    --elbroz-blue: #3b82f6;
+}
+
+/* Page Title */
+.page-title {
+    background: var(--elbroz-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 700;
+    font-size: 2rem;
+}
+
+/* Scroll Hint - Enhanced */
+.scroll-hint {
+    background: linear-gradient(135deg, rgba(236, 72, 153, 0.15) 0%, rgba(168, 85, 247, 0.15) 100%);
+    padding: 14px 24px;
+    border-radius: 12px;
+    border-left: 5px solid var(--elbroz-purple);
+    color: #374151;
+    font-size: 0.95rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 2px 8px rgba(168, 85, 247, 0.15);
+    animation: slideInDown 0.5s ease-out;
+}
+
+.scroll-hint i {
+    color: var(--elbroz-purple);
+    font-size: 1.3rem;
+    animation: slideHorizontal 2s ease-in-out infinite;
+}
+
+@keyframes slideHorizontal {
+    0%, 100% {
+        transform: translateX(0);
+    }
+    50% {
+        transform: translateX(8px);
+    }
+}
+
+@keyframes slideInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Pipeline Wrapper */
+.pipeline-wrapper {
+    border: none;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    border-radius: 16px;
+    overflow: hidden;
+    background: #f8f9fa;
+    position: relative;
+    padding-bottom: 8px;
+}
+
+/* Scroll Navigation Arrows - Always Visible */
+.scroll-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: white;
+    border: 3px solid var(--elbroz-purple);
+    box-shadow: 0 6px 20px rgba(168, 85, 247, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    opacity: 0.95;
+    visibility: visible;
+}
+
+.scroll-arrow.visible {
+    opacity: 1;
+    visibility: visible;
+    animation: pulseArrow 2s ease-in-out infinite;
+}
+
+@keyframes pulseArrow {
+    0%, 100% {
+        transform: translateY(-50%) scale(1);
+    }
+    50% {
+        transform: translateY(-50%) scale(1.08);
+    }
+}
+
+.scroll-arrow:hover {
+    background: var(--elbroz-gradient);
+    border-color: var(--elbroz-purple);
+    box-shadow: 0 6px 20px rgba(168, 85, 247, 0.4);
+    transform: translateY(-50%) scale(1.1);
+}
+
+.scroll-arrow:hover i {
+    color: white;
+}
+
+.scroll-arrow i {
+    font-size: 1.2rem;
+    color: var(--elbroz-purple);
+    transition: color 0.3s ease;
+}
+
+.scroll-arrow-left {
+    left: 16px;
+}
+
+.scroll-arrow-right {
+    right: 16px;
+}
+
+.scroll-arrow:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+/* Scrollable Container */
+.pipeline-scroll-container {
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    padding: 24px 24px 16px 24px;
+    /* Custom scrollbar - always visible */
+    scrollbar-width: auto;
+    scrollbar-color: var(--elbroz-purple) #f1f5f9;
+    scroll-behavior: smooth;
+    /* Enable smooth touch scrolling on mobile */
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure horizontal scroll is ALWAYS enabled on ALL screen sizes */
+@media (max-width: 767px) {
+    .pipeline-scroll-container {
+        overflow-x: auto !important;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+    .pipeline-scroll-container {
+        overflow-x: auto !important;
+    }
+}
+
+@media (min-width: 1200px) and (max-width: 1399px) {
+    .pipeline-scroll-container {
+        overflow-x: auto !important;
+    }
+}
+
+@media (min-width: 1400px) and (max-width: 1919px) {
+    .pipeline-scroll-container {
+        overflow-x: auto !important;
+    }
+}
+
+@media (min-width: 1920px) {
+    .pipeline-scroll-container {
+        overflow-x: auto !important;
+    }
+}
+
+/* Custom Horizontal Scrollbar - Enhanced Visibility */
+.pipeline-scroll-container::-webkit-scrollbar {
+    height: 16px;
+}
+
+.pipeline-scroll-container::-webkit-scrollbar-track {
+    background: #e2e8f0;
+    border-radius: 8px;
+    margin: 0 24px;
+    box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.1);
+}
+
+.pipeline-scroll-container::-webkit-scrollbar-thumb {
+    background: var(--elbroz-gradient);
+    border-radius: 8px;
+    border: 2px solid #f1f5f9;
+    min-width: 60px;
+    box-shadow: 0 2px 8px rgba(168, 85, 247, 0.3);
+}
+
+.pipeline-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, #ec4899 0%, #a855f7 100%);
+    border: 2px solid #e5e7eb;
+    box-shadow: 0 4px 12px rgba(168, 85, 247, 0.5);
+}
+
+.pipeline-scroll-container::-webkit-scrollbar-thumb:active {
+    background: linear-gradient(135deg, #d946a6 0%, #9333ea 100%);
+}
+
+/* Pipeline Board - Premium Scrollable Layout */
+.pipeline-board {
+    display: flex;
+    gap: 20px;
+    min-width: min-content;
+    padding-bottom: 10px;
+}
+
+/* Pipeline Column - Fit to Screen */
+.pipeline-column {
+    min-width: 320px;
+    width: 320px;
+    flex-shrink: 0;
+    background: white;
+    border-radius: 14px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+/* Responsive column widths for optimal readability */
+@media (min-width: 1400px) {
+    .pipeline-column {
+        min-width: 320px;
+        width: 320px;
+    }
+    
+    .pipeline-board {
+        gap: 24px;
+    }
+}
+
+@media (min-width: 1920px) {
+    .pipeline-column {
+        min-width: 340px;
+        width: 340px;
+    }
+}
+
+/* Tablet and Mobile */
+@media (max-width: 768px) {
+    .pipeline-column {
+        min-width: 280px;
+        width: 280px;
+    }
+    
+    .pipeline-board {
+        gap: 16px;
+    }
+}
+
+.pipeline-column:hover {
+    border-color: rgba(168, 85, 247, 0.2);
+    box-shadow: 0 6px 24px rgba(168, 85, 247, 0.15);
+    transform: translateY(-2px);
+}
+
+/* Column Header - Premium Readable */
+.pipeline-column-header {
+    padding: 16px 18px;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.pipeline-column-header h5 {
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pipeline-column-header .badge {
+    font-size: 0.85rem;
+    padding: 5px 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    flex-shrink: 0;
+}
+
+/* Larger screens - more premium space */
+@media (min-width: 1920px) {
+    .pipeline-column-header {
+        padding: 18px 20px;
+    }
+    
+    .pipeline-column-header h5 {
+        font-size: 1.05rem;
+    }
+    
+    .pipeline-column-header .badge {
+        font-size: 0.9rem;
+        padding: 6px 12px;
+    }
+}
+
+/* Column Body */
+.pipeline-column-body {
+    padding: 14px;
+    flex: 1;
+    overflow-y: auto;
+    max-height: calc(100vh - 420px);
+    min-height: 400px;
+    /* Custom scrollbar for column */
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+@media (min-width: 1920px) {
+    .pipeline-column-body {
+        padding: 16px;
+    }
+}
+
+.pipeline-column-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+.pipeline-column-body::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 10px;
+}
+
+.pipeline-column-body::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+.pipeline-column-body::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Pipeline Card - Premium Readable */
+.pipeline-card {
+    background: white;
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    cursor: grab;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid #e5e7eb;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Larger screens - more premium padding */
+@media (min-width: 1920px) {
+    .pipeline-card {
+        padding: 16px;
+        margin-bottom: 14px;
+    }
+}
+
+.pipeline-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--elbroz-gradient);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.pipeline-card:hover {
+    box-shadow: 0 8px 24px rgba(168, 85, 247, 0.2);
+    transform: translateY(-4px) scale(1.02);
+    border-color: rgba(168, 85, 247, 0.3);
+}
+
+.pipeline-card:hover::before {
+    opacity: 1;
+}
+
+.pipeline-card:active {
+    cursor: grabbing;
+}
+
+/* Card Content - Premium Readable */
+.card-company a {
+    font-size: 1rem;
+    font-weight: 700;
+    transition: all 0.2s ease;
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card-company a:hover {
+    color: var(--elbroz-purple) !important;
+    text-decoration: underline !important;
+}
+
+.card-contact {
+    font-size: 0.875rem;
+    color: #6b7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@media (min-width: 1920px) {
+    .card-company a {
+        font-size: 1.05rem;
+    }
+    
+    .card-contact {
+        font-size: 0.9rem;
+    }
+}
+
+.card-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.detail-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: #6b7280;
+}
+
+.detail-item i {
+    width: 16px;
+    text-align: center;
+    flex-shrink: 0;
+    font-size: 0.85rem;
+}
+
+.detail-item small {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@media (min-width: 1920px) {
+    .card-details {
+        gap: 10px;
+    }
+    
+    .detail-item {
+        font-size: 0.9rem;
+    }
+    
+    .detail-item i {
+        width: 18px;
+        font-size: 0.9rem;
+    }
+}
+
+/* Deal Badge - Premium */
+.deal-badge {
+    font-size: 0.85rem;
+    padding: 6px 10px;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(34, 197, 94, 0.3);
+    white-space: nowrap;
+}
+
+@media (min-width: 1920px) {
+    .deal-badge {
+        font-size: 0.9rem;
+        padding: 7px 12px;
+    }
+}
+
+.bg-success-gradient {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+/* Assignee */
+.card-assignee {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    background: linear-gradient(135deg, rgba(236, 72, 153, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%);
+    border-radius: 8px;
+    min-width: 0;
+}
+
+.card-assignee small {
+    min-width: 0;
+}
+
+@media (min-width: 1920px) {
+    .card-assignee {
+        padding: 12px;
+        gap: 12px;
+    }
+}
+
+.avatar-sm {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid white;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    flex-shrink: 0;
+}
+
+@media (min-width: 1920px) {
+    .avatar-sm {
+        width: 36px;
+        height: 36px;
+    }
+}
+
+/* Utility class for text overflow */
+.min-w-0 {
+    min-width: 0;
+}
+
+.text-truncate {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Card Footer */
+.card-footer-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 12px;
+    border-top: 1px solid #e5e7eb;
+}
+
+/* Status Badges */
+.badge-status-accepted {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    font-weight: 600;
+}
+
+.badge-status-pending {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    font-weight: 600;
+}
+
+.badge-status-rejected {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    font-weight: 600;
+}
+
+.badge-status-resubmitted {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    color: white;
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    font-weight: 600;
+}
+
+/* Empty Column */
+.empty-column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    text-align: center;
+    background: linear-gradient(135deg, rgba(236, 72, 153, 0.02) 0%, rgba(168, 85, 247, 0.02) 100%);
+    border: 2px dashed #e5e7eb;
+    border-radius: 12px;
+    min-height: 300px;
+}
+
+/* Sortable States */
+.sortable-ghost {
+    opacity: 0.3;
+    background: linear-gradient(135deg, rgba(236, 72, 153, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
+    border: 2px dashed var(--elbroz-purple);
+}
+
+.sortable-drag {
+    cursor: grabbing;
+    box-shadow: 0 12px 36px rgba(168, 85, 247, 0.4);
+    transform: rotate(3deg) scale(1.05);
+    border-color: var(--elbroz-purple);
+}
+
+/* Stat Cards (matching dashboard) */
+.stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(236, 72, 153, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.stat-card:hover::before {
+    opacity: 1;
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.stat-card h3 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 5px;
+    background: var(--elbroz-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.stat-card p {
+    color: #6b7280;
+    font-size: 0.95rem;
+    margin-bottom: 0;
+    font-weight: 500;
+}
+
+.stat-card i {
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 2.5rem;
+    color: rgba(168, 85, 247, 0.1);
+}
+
+/* Animations */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.pipeline-column {
+    animation: slideIn 0.4s ease-out;
+}
+
+.pipeline-column:nth-child(1) { animation-delay: 0.05s; }
+.pipeline-column:nth-child(2) { animation-delay: 0.1s; }
+.pipeline-column:nth-child(3) { animation-delay: 0.15s; }
+.pipeline-column:nth-child(4) { animation-delay: 0.2s; }
+.pipeline-column:nth-child(5) { animation-delay: 0.25s; }
+.pipeline-column:nth-child(6) { animation-delay: 0.3s; }
+.pipeline-column:nth-child(7) { animation-delay: 0.35s; }
+
+/* Mobile Responsive */
+@media (max-width: 992px) {
+    .pipeline-column {
+        min-width: 300px;
+        max-width: 300px;
+    }
+    
+    .page-title {
+        font-size: 1.5rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .scroll-hint {
+        font-size: 0.85rem;
+        padding: 10px 16px;
+    }
+    
+    .pipeline-scroll-container {
+        padding: 16px;
+    }
+    
+    .pipeline-board {
+        gap: 16px;
+    }
+    
+    .pipeline-column {
+        min-width: 280px;
+        max-width: 280px;
+    }
+    
+    .pipeline-column-body {
+        max-height: calc(100vh - 500px);
+        min-height: 300px;
+    }
+}
+
+@media (max-width: 576px) {
+    .pipeline-column {
+        min-width: 260px;
+        max-width: 260px;
+    }
+    
+    .stat-card h3 {
+        font-size: 1.5rem;
+    }
+}
+</style>
+
+<!-- SortableJS for drag and drop -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize Sortable for each stage column
+    const stageColumns = document.querySelectorAll('.pipeline-column-body');
+    
+    stageColumns.forEach(column => {
+        new Sortable(column, {
+            group: 'pipeline',
+            animation: 200,
+            easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+            ghostClass: 'sortable-ghost',
+            dragClass: 'sortable-drag',
+            forceFallback: true,
+            fallbackTolerance: 3,
+            onEnd: function(evt) {
+                const leadId = evt.item.dataset.leadId;
+                const newStageId = evt.to.dataset.stageId;
+                const newStageName = evt.to.dataset.stageName;
+                const oldStageName = evt.from.dataset.stageName;
+                
+                // Update lead stage via API
+                fetch(`/api/lead/${leadId}/stage`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        stage_id: newStageId
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Update badge counts
+                        updateStageCounts();
+                        
+                        // Show success notification
+                        showNotification(`✓ Lead moved to ${newStageName}`, 'success');
+                        
+                        // Add subtle animation to the card
+                        evt.item.style.animation = 'pulse 0.5s ease';
+                        setTimeout(() => {
+                            evt.item.style.animation = '';
+                        }, 500);
+                    } else {
+                        // Revert the move
+                        evt.from.insertBefore(evt.item, evt.from.children[evt.oldIndex]);
+                        showNotification(data.message || 'Failed to update lead stage', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    // Revert the move
+                    evt.from.insertBefore(evt.item, evt.from.children[evt.oldIndex]);
+                    showNotification('Network error. Please try again.', 'error');
+                });
+            }
+        });
+    });
+    
+    function updateStageCounts() {
+        stageColumns.forEach(column => {
+            const count = column.querySelectorAll('.pipeline-card').length;
+            const badge = column.previousElementSibling.querySelector('.badge');
+            if (badge) {
+                badge.textContent = count;
+                // Add animation to badge
+                badge.style.transform = 'scale(1.2)';
+                setTimeout(() => {
+                    badge.style.transform = 'scale(1)';
+                }, 200);
+            }
+        });
+    }
+    
+    function showNotification(message, type) {
+        const notification = document.createElement('div');
+        notification.className = `alert alert-${type === 'success' ? 'success' : 'danger'} position-fixed notification-toast`;
+        notification.style.cssText = `
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            min-width: 300px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            border-radius: 12px;
+            border: none;
+            animation: slideInRight 0.3s ease;
+            background: ${type === 'success' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'};
+            color: white;
+            font-weight: 500;
+        `;
+        notification.textContent = message;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.style.animation = 'slideOutRight 0.3s ease';
+            setTimeout(() => {
+                notification.remove();
+            }, 300);
+        }, 3000);
+    }
+    
+    // Add smooth scroll behavior with mouse drag
+    const scrollContainer = document.querySelector('.pipeline-scroll-container');
+    let isDown = false;
+    let startX;
+    let scrollLeft;
+    
+    scrollContainer.addEventListener('mousedown', (e) => {
+        // Only enable drag scroll when clicking on the container background
+        if (e.target === scrollContainer || e.target.classList.contains('pipeline-board')) {
+            isDown = true;
+            scrollContainer.style.cursor = 'grabbing';
+            startX = e.pageX - scrollContainer.offsetLeft;
+            scrollLeft = scrollContainer.scrollLeft;
+        }
+    });
+    
+    scrollContainer.addEventListener('mouseleave', () => {
+        isDown = false;
+        scrollContainer.style.cursor = 'default';
+    });
+    
+    scrollContainer.addEventListener('mouseup', () => {
+        isDown = false;
+        scrollContainer.style.cursor = 'default';
+    });
+    
+    scrollContainer.addEventListener('mousemove', (e) => {
+        if (!isDown) return;
+        e.preventDefault();
+        const x = e.pageX - scrollContainer.offsetLeft;
+        const walk = (x - startX) * 2;
+        scrollContainer.scrollLeft = scrollLeft - walk;
+    });
+    
+    // Scroll Arrow Navigation
+    const scrollLeftBtn = document.getElementById('scrollLeft');
+    const scrollRightBtn = document.getElementById('scrollRight');
+    
+    // Function to update arrow visibility - Always show if scrollable
+    function updateScrollArrows() {
+        const maxScrollLeft = scrollContainer.scrollWidth - scrollContainer.clientWidth;
+        const currentScrollLeft = scrollContainer.scrollLeft;
+        
+        // Always show arrows if content is scrollable, with pulse animation
+        // Show/hide left arrow
+        if (currentScrollLeft > 10) {
+            scrollLeftBtn.classList.add('visible');
+        } else {
+            scrollLeftBtn.classList.remove('visible');
+        }
+        
+        // Show/hide right arrow - keep visible if there's more content
+        if (currentScrollLeft < maxScrollLeft - 10) {
+            scrollRightBtn.classList.add('visible');
+        } else {
+            scrollRightBtn.classList.remove('visible');
+        }
+        
+        // Make arrows always visible (not hidden) even when not pulsing
+        if (maxScrollLeft > 0) {
+            scrollLeftBtn.style.display = 'flex';
+            scrollRightBtn.style.display = 'flex';
+        }
+    }
+    
+    // Smooth scroll function
+    function smoothScroll(element, targetScroll, duration = 300) {
+        const startScroll = element.scrollLeft;
+        const distance = targetScroll - startScroll;
+        const startTime = performance.now();
+        
+        function animation(currentTime) {
+            const elapsedTime = currentTime - startTime;
+            const progress = Math.min(elapsedTime / duration, 1);
+            
+            // Easing function (ease-in-out)
+            const ease = progress < 0.5
+                ? 2 * progress * progress
+                : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+            
+            element.scrollLeft = startScroll + distance * ease;
+            
+            if (progress < 1) {
+                requestAnimationFrame(animation);
+            }
+        }
+        
+        requestAnimationFrame(animation);
+    }
+    
+    // Scroll left button click
+    scrollLeftBtn.addEventListener('click', () => {
+        const scrollAmount = scrollContainer.clientWidth * 0.8; // Scroll 80% of visible width
+        const targetScroll = Math.max(0, scrollContainer.scrollLeft - scrollAmount);
+        smoothScroll(scrollContainer, targetScroll);
+    });
+    
+    // Scroll right button click
+    scrollRightBtn.addEventListener('click', () => {
+        const scrollAmount = scrollContainer.clientWidth * 0.8;
+        const maxScrollLeft = scrollContainer.scrollWidth - scrollContainer.clientWidth;
+        const targetScroll = Math.min(maxScrollLeft, scrollContainer.scrollLeft + scrollAmount);
+        smoothScroll(scrollContainer, targetScroll);
+    });
+    
+    // Update arrows on scroll
+    scrollContainer.addEventListener('scroll', updateScrollArrows);
+    
+    // Update arrows on window resize
+    window.addEventListener('resize', updateScrollArrows);
+    
+    // Initial arrow update
+    updateScrollArrows();
+});
+
+// Add keyframe animations
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes slideInRight {
+        from {
+            transform: translateX(400px);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes slideOutRight {
+        from {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateX(400px);
+            opacity: 0;
+        }
+    }
+    
+    @keyframes pulse {
+        0%, 100% {
+            transform: scale(1);
+        }
+        50% {
+            transform: scale(1.05);
+        }
+    }
+`;
+document.head.appendChild(style);
+</script>
+{% endblock %}

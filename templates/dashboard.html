@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block authenticated_content %}
+{% include 'partials/_targets_topbar.html' %}
+<div class="home-page">
+<div class="d-flex justify-content-between align-items-center mb-4 fade-in-up">
+    <h1 class="page-title">
+        <i class="fas fa-folder-open me-2"></i>Lead Center
+    </h1>
+    <div class="d-flex gap-2">
+        {% if current_user.role in ['marketer', 'manager'] %}
+        <a href="{{ url_for('new_lead') }}" class="btn btn-primary">
+            <i class="fas fa-plus-circle me-2"></i>Submit New Lead
+        </a>
+        {% endif %}
+        {% if current_user.role in ['admin', 'manager'] %}
+        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#exportModal">
+            <i class="fas fa-file-export me-2"></i>Export to CSV
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row mb-4 fade-in-up">
+    {% if current_user.role in ['admin', 'manager'] %}
+    <div class="col-md-3 mb-3">
+        <div class="stat-card primary">
+            <h3>{{ leads|length }}</h3>
+            <p>Total Leads</p>
+            <i class="fas fa-list"></i>
+        </div>
+    </div>
+    {% endif %}
+    
+    {% if current_user.role == 'marketer' %}
+    <div class="col-md-4 mb-3">
+        <div class="stat-card primary">
+            <h3>{{ leads|length }}</h3>
+            <p>My Leads</p>
+            <i class="fas fa-list"></i>
+        </div>
+    </div>
+    {% endif %}
+    
+    <div class="col-md-{{ '3' if current_user.role in ['admin', 'manager'] else '4' }} mb-3">
+        <div class="stat-card warning">
+            <h3>{{ leads|map(attribute='lead')|selectattr('status', 'equalto', 'Pending')|list|length }}</h3>
+            <p>Pending</p>
+            <i class="fas fa-clock"></i>
+        </div>
+    </div>
+    
+    <div class="col-md-{{ '3' if current_user.role in ['admin', 'manager'] else '4' }} mb-3">
+        <div class="stat-card success">
+            <h3>{{ leads|map(attribute='lead')|selectattr('status', 'equalto', 'Accepted')|list|length }}</h3>
+            <p>Accepted</p>
+            <i class="fas fa-check-circle"></i>
+        </div>
+    </div>
+    
+    <div class="col-md-{{ '3' if current_user.role in ['admin', 'manager'] else '4' }} mb-3">
+        <div class="stat-card danger">
+            <h3>{{ leads|map(attribute='lead')|selectattr('status', 'equalto', 'Rejected')|list|length }}</h3>
+            <p>Rejected</p>
+            <i class="fas fa-times-circle"></i>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4 fade-in-up">
+    <div class="card-body">
+        <h5 class="card-title mb-3">Filter Leads</h5>
+        
+        <div class="mb-3">
+            <label class="form-label fw-bold">Quick Date Filters</label>
+            <div class="btn-group d-flex flex-wrap" role="group">
+                <a href="{{ url_for('dashboard', date_range='current_month', status=filters.status, service=filters.service, submitter=filters.submitter) }}" 
+                   class="btn btn-sm {{ 'btn-primary' if filters.date_range == 'current_month' else 'btn-outline-primary' }}">
+                    <i class="fas fa-calendar-alt me-1"></i>Current Month
+                </a>
+                <a href="{{ url_for('dashboard', date_range='last_month', status=filters.status, service=filters.service, submitter=filters.submitter) }}" 
+                   class="btn btn-sm {{ 'btn-primary' if filters.date_range == 'last_month' else 'btn-outline-primary' }}">
+                    <i class="fas fa-calendar-minus me-1"></i>Last Month
+                </a>
+                <a href="{{ url_for('dashboard', date_range='this_week', status=filters.status, service=filters.service, submitter=filters.submitter) }}" 
+                   class="btn btn-sm {{ 'btn-primary' if filters.date_range == 'this_week' else 'btn-outline-primary' }}">
+                    <i class="fas fa-calendar-week me-1"></i>This Week
+                </a>
+                <a href="{{ url_for('dashboard', date_range='all_time', status=filters.status, service=filters.service, submitter=filters.submitter) }}" 
+                   class="btn btn-sm {{ 'btn-primary' if filters.date_range == 'all_time' else 'btn-outline-primary' }}">
+                    <i class="fas fa-infinity me-1"></i>All Time
+                </a>
+            </div>
+        </div>
+        
+        <hr class="my-3">
+        
+        <form method="GET" action="{{ url_for('dashboard') }}" class="row g-3">
+            <div class="col-md-2">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All</option>
+                    <option value="Pending" {% if filters.status == 'Pending' %}selected{% endif %}>Pending</option>
+                    <option value="Accepted" {% if filters.status == 'Accepted' %}selected{% endif %}>Accepted</option>
+                    <option value="Rejected" {% if filters.status == 'Rejected' %}selected{% endif %}>Rejected</option>
+                    <option value="Resubmitted" {% if filters.status == 'Resubmitted' %}selected{% endif %}>Resubmitted</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Service</label>
+                <select name="service" class="form-select">
+                    <option value="">All</option>
+                    {% for service in services %}
+                    <option value="{{ service.id }}" {% if filters.service == service.id|string %}selected{% endif %}>{{ service.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% if current_user.role in ['admin', 'manager'] %}
+            <div class="col-md-2">
+                <label class="form-label">Submitter</label>
+                <select name="submitter" class="form-select">
+                    <option value="">All</option>
+                    {% for submitter in submitters %}
+                    <option value="{{ submitter.id }}" {% if filters.submitter == submitter.id|string %}selected{% endif %}>{{ submitter.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="col-md-2">
+                <label class="form-label">From Date</label>
+                <input type="date" name="date_from" class="form-control" value="{{ filters.date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">To Date</label>
+                <input type="date" name="date_to" class="form-control" value="{{ filters.date_to }}">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-secondary me-2">
+                    <i class="fas fa-filter me-1"></i>
+                </button>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-redo me-1"></i>
+                </a>
+            </div>
+        </form>
+        
+        {% if filters.date_from or filters.date_to %}
+        <div class="mt-3">
+            <small class="text-muted">
+                <i class="fas fa-info-circle me-1"></i>
+                Showing leads from {{ filters.date_from or 'beginning' }} to {{ filters.date_to or 'now' }}
+            </small>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <h5 class="card-title">All Leads ({{ leads|length }})</h5>
+        
+        {% if leads %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Company</th>
+                        <th>Contact Name</th>
+                        <th>Email</th>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <th>Submitted By</th>
+                        <th>Deadline</th>
+                        {% endif %}
+                        <th>Created At</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in leads %}
+                    <tr>
+                        <td>{{ item.lead.id }}</td>
+                        <td>{{ item.lead.company }}</td>
+                        <td>{{ item.lead.full_name }}</td>
+                        <td>{{ item.lead.email }}</td>
+                        {% if current_user.role in ['admin', 'manager'] %}
+                        <td>{{ item.submitter_name }}</td>
+                        <td>
+                            {% if item.deadline %}
+                                {% if item.is_overdue %}
+                                <span class="badge bg-danger">
+                                    <i class="fas fa-exclamation-triangle me-1"></i>
+                                    Overdue: {{ format_indian_datetime(item.deadline, 'datetime') }}
+                                </span>
+                                {% else %}
+                                <span class="badge bg-info">
+                                    <i class="fas fa-clock me-1"></i>
+                                    {{ format_indian_datetime(item.deadline, 'datetime') }}
+                                </span>
+                                {% endif %}
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                        <td>{{ format_indian_datetime(item.lead.created_at, 'datetime') }}</td>
+                        <td>
+                            {% if item.lead.status == 'Pending' %}
+                            <span class="badge bg-warning">Pending</span>
+                            {% elif item.lead.status == 'Accepted' %}
+                            <span class="badge bg-success">Accepted</span>
+                            {% elif item.lead.status == 'Rejected' %}
+                            <span class="badge bg-danger">Rejected</span>
+                            {% elif item.lead.status == 'Resubmitted' %}
+                            <span class="badge bg-info">Resubmitted</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('view_lead', lead_id=item.lead.id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                            {% if item.lead.status == 'Rejected' and item.lead.submitted_by_user_id == current_user.id %}
+                            <a href="{{ url_for('resubmit_lead', lead_id=item.lead.id) }}" class="btn btn-sm btn-outline-success ms-1">
+                                <i class="fas fa-redo me-1"></i>Resubmit
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted">No leads found.</p>
+        {% endif %}
+    </div>
+</div>
+
+{% if current_user.role in ['admin', 'manager'] %}
+<div class="modal fade" id="exportModal" tabindex="-1" aria-labelledby="exportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exportModalLabel">
+                    <i class="fas fa-file-export me-2"></i>Export Leads to CSV
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-4">
+                    Select filters to customize your export. Leave filters empty to export all leads.
+                </p>
+                <form id="exportForm" method="GET" action="{{ url_for('export_leads') }}">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Status</label>
+                            <select name="status" class="form-select">
+                                <option value="">All Statuses</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Accepted">Accepted</option>
+                                <option value="Rejected">Rejected</option>
+                                <option value="Resubmitted">Resubmitted</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Service</label>
+                            <select name="service" class="form-select">
+                                <option value="">All Services</option>
+                                {% for service in services %}
+                                <option value="{{ service.id }}">{{ service.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Submitter (Marketer)</label>
+                            <select name="submitter" class="form-select">
+                                <option value="">All Marketers</option>
+                                {% for submitter in submitters %}
+                                <option value="{{ submitter.id }}">{{ submitter.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">From Date</label>
+                            <input type="date" name="date_from" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">To Date</label>
+                            <input type="date" name="date_to" class="form-control">
+                        </div>
+                    </div>
+                    <div class="alert alert-info mt-4 d-flex align-items-center" role="alert">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <div>
+                            The exported CSV will include: ID, Submitted By, Created Date, Contact Details, Company, Services, Location, Status, and Attachment info.
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-2"></i>Cancel
+                </button>
+                <button type="submit" form="exportForm" class="btn btn-success">
+                    <i class="fas fa-download me-2"></i>Download CSV
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block authenticated_content %}
+<div class="row justify-content-center fade-in-up">
+    <div class="col-md-10">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-edit me-2"></i>{{ title }}
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Editing Rejected Lead:</strong> Make the necessary changes below and provide a summary of what you've updated. Once saved, you can resubmit the lead for review.
+                </div>
+                
+                <form method="POST" enctype="multipart/form-data">
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            {{ form.full_name.label(class="form-label") }}
+                            {{ form.full_name(class="form-control" + (" is-invalid" if form.full_name.errors else "")) }}
+                            {% if form.full_name.errors %}
+                                <div class="invalid-feedback">{{ form.full_name.errors[0] }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            {{ form.email.label(class="form-label") }}
+                            {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else "")) }}
+                            {% if form.email.errors %}
+                                <div class="invalid-feedback">{{ form.email.errors[0] }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            {{ form.phone.label(class="form-label") }}
+                            {{ form.phone(class="form-control" + (" is-invalid" if form.phone.errors else "")) }}
+                            {% if form.phone.errors %}
+                                <div class="invalid-feedback">{{ form.phone.errors[0] }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            {{ form.company.label(class="form-label") }}
+                            {{ form.company(class="form-control" + (" is-invalid" if form.company.errors else "")) }}
+                            {% if form.company.errors %}
+                                <div class="invalid-feedback">{{ form.company.errors[0] }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.domain.label(class="form-label") }}
+                        {{ form.domain(class="form-control" + (" is-invalid" if form.domain.errors else "")) }}
+                        {% if form.domain.errors %}
+                            <div class="invalid-feedback">{{ form.domain.errors[0] }}</div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.industry.label(class="form-label") }}
+                        {{ form.industry(class="form-select" + (" is-invalid" if form.industry.errors else "")) }}
+                        {% if form.industry.errors %}
+                            <div class="invalid-feedback">{{ form.industry.errors[0] }}</div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.services.label.text }} <span class="text-danger">*</span></label>
+                        <div class="border rounded p-3" style="max-height: 250px; overflow-y: auto;">
+                            {% for choice_id, choice_label in form.services.choices %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="services" value="{{ choice_id }}" id="service_{{ choice_id }}" 
+                                       {% if form.services.data and choice_id in form.services.data %}checked{% endif %}>
+                                <label class="form-check-label" for="service_{{ choice_id }}">
+                                    {{ choice_label }}
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <div class="form-text">Select one or more services that you pitched to this lead</div>
+                        {% if form.services.errors %}
+                            <div class="text-danger small mt-1">{{ form.services.errors[0] }}</div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            {{ form.country.label(class="form-label") }}
+                            {{ form.country(class="form-control" + (" is-invalid" if form.country.errors else "")) }}
+                            {% if form.country.errors %}
+                                <div class="invalid-feedback">{{ form.country.errors[0] }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="col-md-4 mb-3">
+                            {{ form.state.label(class="form-label") }}
+                            {{ form.state(class="form-control" + (" is-invalid" if form.state.errors else "")) }}
+                            {% if form.state.errors %}
+                                <div class="invalid-feedback">{{ form.state.errors[0] }}</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="col-md-4 mb-3">
+                            {{ form.city.label(class="form-label") }}
+                            {{ form.city(class="form-control" + (" is-invalid" if form.city.errors else "")) }}
+                            {% if form.city.errors %}
+                                <div class="invalid-feedback">{{ form.city.errors[0] }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="card bg-light">
+                            <div class="card-header">
+                                <h6 class="mb-0">
+                                    <i class="fas fa-share-alt me-2"></i>Social Profiles <span class="badge bg-secondary">Optional</span>
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <p class="text-muted small mb-3">Add or update social media profiles or website URLs for this lead (optional)</p>
+                                
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">
+                                            <i class="fab fa-linkedin text-primary"></i> LinkedIn URL
+                                        </label>
+                                        {{ form.linkedin_url(class="form-control" + (" is-invalid" if form.linkedin_url.errors else ""), placeholder="https://linkedin.com/in/...") }}
+                                        {% if form.linkedin_url.errors %}
+                                            <div class="invalid-feedback">{{ form.linkedin_url.errors[0] }}</div>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">
+                                            <i class="fab fa-twitter text-info"></i> Twitter URL
+                                        </label>
+                                        {{ form.twitter_url(class="form-control" + (" is-invalid" if form.twitter_url.errors else ""), placeholder="https://twitter.com/...") }}
+                                        {% if form.twitter_url.errors %}
+                                            <div class="invalid-feedback">{{ form.twitter_url.errors[0] }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">
+                                            <i class="fab fa-facebook text-primary"></i> Facebook URL
+                                        </label>
+                                        {{ form.facebook_url(class="form-control" + (" is-invalid" if form.facebook_url.errors else ""), placeholder="https://facebook.com/...") }}
+                                        {% if form.facebook_url.errors %}
+                                            <div class="invalid-feedback">{{ form.facebook_url.errors[0] }}</div>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">
+                                            <i class="fas fa-globe text-success"></i> Website URL
+                                        </label>
+                                        {{ form.website_url(class="form-control" + (" is-invalid" if form.website_url.errors else ""), placeholder="https://example.com") }}
+                                        {% if form.website_url.errors %}
+                                            <div class="invalid-feedback">{{ form.website_url.errors[0] }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.attachment.label(class="form-label") }}
+                        {{ form.attachment(class="form-control" + (" is-invalid" if form.attachment.errors else "")) }}
+                        <div class="form-text">Upload new attachment or leave blank to keep existing</div>
+                        {% if form.attachment.errors %}
+                            <div class="invalid-feedback">{{ form.attachment.errors[0] }}</div>
+                        {% endif %}
+                    </div>
+
+                    {% if lead and lead.attachment_url %}
+                    <div class="mb-3">
+                        <label class="form-label">Existing Attachment</label>
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="mb-2 small text-muted">
+                                    {% if lead.attachment_filename %}
+                                        {{ lead.attachment_filename }}
+                                    {% else %}
+                                        {{ lead.attachment_url.split('/')[-1] }}
+                                    {% endif %}
+                                </div>
+
+                                <div id="attachment_preview" class="mb-2">
+                                    {% if lead.attachment_url.lower().endswith('.pdf') %}
+                                        <object data="{{ url_for('attachments.download_attachment', lead_id=lead_id) }}" type="application/pdf" width="100%" height="400">
+                                            <p>Unable to display PDF in browser. <a href="{{ url_for('attachments.download_attachment', lead_id=lead_id) }}" target="_blank" rel="noopener">Open in new tab</a> or <a href="{{ url_for('attachments.download_attachment', lead_id=lead_id) }}" download>Download</a>.</p>
+                                        </object>
+                                    {% else %}
+                                        <a id="attachment_download_link" href="{{ url_for('attachments.download_attachment', lead_id=lead_id) }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-download me-2"></i>Download Attachment
+                                        </a>
+                                    {% endif %}
+                                </div>
+
+                                {% set is_cloudinary = 'res.cloudinary.com' in (lead.attachment_url or '') %}
+                                {% if is_cloudinary %}
+                                <div class="mt-2">
+                                    <button id="make_public_btn" type="button" class="btn btn-sm btn-success">
+                                        <i class="fas fa-unlock me-1"></i>Make attachment public
+                                    </button>
+                                    <span id="make_public_status" class="small text-success ms-2 d-none"></span>
+                                    <div id="make_public_error" class="small text-danger mt-1 d-none"></div>
+                                    <div class="small text-muted mt-1">
+                                        Note: Cloudinary may block delivery of raw files (PDFs) for accounts that are restricted.
+                                        If you see "Blocked for delivery" or "Customer is marked as untrusted" you'll need to
+                                        contact Cloudinary support or make the file public in the Cloudinary console.
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <script>
+                    document.addEventListener('DOMContentLoaded', function(){
+                        var leadDownloadUrl = "{{ url_for('attachments.download_attachment', lead_id=lead_id) }}";
+                        var previewEl = document.getElementById('attachment_preview');
+                        var warningEl = document.getElementById('attachment_preview_warning');
+
+                        // Try a HEAD request to our download endpoint to detect previewability (same-origin)
+                        if (previewEl && previewEl.innerHTML && previewEl.querySelector('object')) {
+                            fetch(leadDownloadUrl, { method: 'HEAD' }).then(function(resp){
+                                var ct = (resp.headers.get('content-type') || '').toLowerCase();
+                                if (!resp.ok || !ct.includes('pdf')) {
+                                    previewEl.innerHTML = '<a href="' + leadDownloadUrl + '" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="fas fa-download me-2"></i>Download Attachment</a>';
+                                    warningEl.classList.remove('d-none');
+                                }
+                            }).catch(function(){
+                                previewEl.innerHTML = '<a href="' + leadDownloadUrl + '" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="fas fa-download me-2"></i>Download Attachment</a>';
+                                warningEl.classList.remove('d-none');
+                            });
+                        }
+
+                        var makeBtn = document.getElementById('make_public_btn');
+                        var errorEl = document.getElementById('make_public_error');
+                        var statusEl = document.getElementById('make_public_status');
+
+                        if (makeBtn) {
+                            makeBtn.addEventListener('click', function(e){
+                                e.preventDefault();
+                                errorEl.classList.add('d-none');
+                                statusEl.classList.add('d-none');
+
+                                var btn = this;
+                                btn.disabled = true;
+                                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Making public...';
+                                var csrfInput = document.querySelector('input[name="csrf_token"]');
+                                var headers = { 'Content-Type': 'application/json' };
+                                if (csrfInput) headers['X-CSRFToken'] = csrfInput.value;
+                                fetch("{{ url_for('attachments.make_public', lead_id=lead_id) }}", {
+                                    method: 'POST',
+                                    headers: headers,
+                                    credentials: 'same-origin'
+                                }).then(function(r){
+                                    return r.json().then(function(data){ return {status: r.status, body: data}; });
+                                }).then(function(result){
+                                    if (result.body && result.body.success) {
+                                        // reload to use new public URL for preview
+                                        location.reload();
+                                    } else {
+                                        btn.disabled = false;
+                                        btn.innerHTML = '<i class="fas fa-unlock me-1"></i>Make attachment public';
+                                        var msg = (result.body && result.body.message) ? result.body.message : 'Failed to make public';
+                                        errorEl.textContent = msg;
+                                        errorEl.classList.remove('d-none');
+                                        if (result.status === 403) {
+                                            // special hint for Cloudinary account block
+                                            errorEl.textContent += ' — Cloudinary may have blocked this account. Please contact Cloudinary support or make the file public from the Cloudinary Media Library.';
+                                        }
+                                    }
+                                }).catch(function(err){
+                                    btn.disabled = false;
+                                    btn.innerHTML = '<i class="fas fa-unlock me-1"></i>Make attachment public';
+                                    errorEl.textContent = 'Unexpected error while making public';
+                                    errorEl.classList.remove('d-none');
+                                });
+                            });
+                        }
+                    });
+                    </script>
+                    {% endif %}
+                    
+                    <div class="mb-3">
+                        {{ form.change_summary.label(class="form-label") }}
+                        {{ form.change_summary(class="form-control" + (" is-invalid" if form.change_summary.errors else ""), rows=4, placeholder="Describe what you changed and why...") }}
+                        <div class="form-text">Minimum 10 characters - explain your modifications</div>
+                        {% if form.change_summary.errors %}
+                            <div class="invalid-feedback">{{ form.change_summary.errors[0] }}</div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="d-flex gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>Save Changes
+                        </button>
+                        <a href="{{ url_for('view_lead', lead_id=lead_id) }}" class="btn btn-secondary">
+                            <i class="fas fa-times me-2"></i>Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

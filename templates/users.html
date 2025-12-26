@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Users{% endblock %}
+
+{% block authenticated_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Manage Users</h1>
+    <a href="{{ url_for('add_user') }}" class="btn btn-primary">Add New User</a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <h5 class="card-title">All Users ({{ users|length }})</h5>
+        
+        {% if users %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Profile</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Created At</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ user.id }}</td>
+                        <td>
+                            {% set avatar = get_user_avatar(user.id) %}
+                            {% if avatar %}
+                            <img src="{{ url_for('uploaded_profile', filename=avatar) }}" 
+                                 alt="{{ user.name }}" 
+                                 class="rounded-circle" 
+                                 style="width: 40px; height: 40px; object-fit: cover;">
+                            {% else %}
+                            <div class="rounded-circle bg-gradient text-white d-flex align-items-center justify-content-center" 
+                                 style="width: 40px; height: 40px; font-weight: 600;">
+                                {{ user.name[0].upper() }}
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td>{{ user.name }}</td>
+                        <td>{{ user.email }}</td>
+                        <td>
+                            {% if user.role == 'admin' %}
+                            <span class="badge bg-danger">Admin</span>
+                            {% elif user.role == 'manager' %}
+                            <span class="badge bg-primary">EM Team Leader</span>
+                            {% elif user.role == 'bd_sales' %}
+                            <span class="badge bg-info">BD Sales</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Email Marketer</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if user.is_protected %}
+                            <span class="badge bg-warning text-dark"><i class="fas fa-shield-alt"></i> Protected</span>
+                            {% else %}
+                            <span class="badge bg-success">Active</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ format_indian_datetime(user.created_at, 'datetime') }}</td>
+                        <td>
+                            <a href="{{ url_for('edit_user', user_id=user.id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+                            {% if user.id != current_user.id %}
+                                {% if user.is_protected %}
+                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="Protected users cannot be deleted">
+                                    <i class="fas fa-shield-alt"></i> Delete
+                                </button>
+                                {% else %}
+                                <a href="{{ url_for('confirm_delete_user', user_id=user.id) }}" class="btn btn-sm btn-outline-danger">
+                                    Delete
+                                </a>
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted">No users found.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

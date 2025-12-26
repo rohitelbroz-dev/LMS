@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Targets{% endblock %}
+
+{% block authenticated_content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Monthly Targets</h1>
+    <a href="{{ url_for('new_target') }}" class="btn btn-primary">
+        <i class="fas fa-plus-circle me-2"></i>Create New Target
+    </a>
+</div>
+
+{% if targets %}
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Assigned To</th>
+                        <th>Role</th>
+                        <th>Target Period</th>
+                        <th>Type</th>
+                        <th>Target</th>
+                        <th>Progress</th>
+                        <th>Assigned By</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for target in targets %}
+                    <tr>
+                        <td>
+                            <strong>{{ target.assignee_name }}</strong>
+                        </td>
+                        <td>
+                            <span class="badge bg-{{ 'primary' if target.assignee_role == 'manager' else 'info' }}">
+                                {{ target.assignee_role|capitalize }}
+                            </span>
+                        </td>
+                        <td>
+                            <small class="text-muted">
+                                {{ target.period_start }} to {{ target.period_end }}
+                            </small>
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">{{ target.target_type|capitalize }}</span>
+                        </td>
+                        <td>
+                            <strong>{{ target.target_count }}</strong> leads
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="flex-grow-1 me-2">
+                                    <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar {% if target.progress_percent >= 100 %}bg-success{% elif target.progress_percent >= 75 %}bg-info{% elif target.progress_percent >= 50 %}bg-warning{% else %}bg-danger{% endif %}" 
+                                             role="progressbar" 
+                                             style="width: {{ target.progress_percent|round|int }}%"
+                                             aria-valuenow="{{ target.actual_count }}" 
+                                             aria-valuemin="0" 
+                                             aria-valuemax="{{ target.target_count }}">
+                                            {{ target.progress_percent|round|int }}%
+                                        </div>
+                                    </div>
+                                </div>
+                                <small class="text-muted" style="min-width: 60px;">
+                                    {{ target.actual_count }}/{{ target.target_count }}
+                                </small>
+                            </div>
+                        </td>
+                        <td>{{ target.assigner_name }}</td>
+                        <td>
+                            {% if target.can_edit %}
+                            <div class="btn-group btn-group-sm">
+                                <a href="{{ url_for('edit_target', target_id=target.id) }}" 
+                                   class="btn btn-outline-primary">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <form method="POST" action="{{ url_for('delete_target', target_id=target.id) }}" 
+                                      onsubmit="return confirm('Are you sure you want to delete this target?');" 
+                                      style="display: inline;">
+                                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                            {% else %}
+                            <small class="text-muted">Read-only</small>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-2"></i>
+    No targets have been set yet. 
+    {% if current_user.role in ['admin', 'manager'] %}
+    <a href="{{ url_for('new_target') }}" class="alert-link">Create your first target</a> to get started!
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="mt-4">
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>About Targets</h5>
+        </div>
+        <div class="card-body">
+            <ul class="mb-0">
+                {% if current_user.role == 'admin' %}
+                <li><strong>As an Admin:</strong> You can assign monthly/weekly targets to EM Team Leaders</li>
+                <li><strong>EM Team Leader Progress:</strong> Counts accepted leads during the target period</li>
+                {% elif current_user.role == 'manager' %}
+                <li><strong>As an EM Team Leader:</strong> You can assign monthly/weekly targets to Email Marketers</li>
+                <li><strong>Your Progress:</strong> Counts leads you've accepted during the target period</li>
+                <li><strong>Marketer Progress:</strong> Counts submitted non-rejected leads during the period</li>
+                {% else %}
+                <li><strong>Your Progress:</strong> Counts your submitted leads (excluding rejected ones) during the target period</li>
+                <li><strong>Targets:</strong> Set by your EM Team Leader to help track team performance</li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

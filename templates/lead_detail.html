@@ -1,0 +1,944 @@
+{% extends "base.html" %}
+
+{% block title %}Lead Details - {{ lead.company }}{% endblock %}
+
+{% block authenticated_content %}
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4 fade-in-up">
+    <h1 class="page-title">
+        <i class="fas fa-file-alt me-2"></i>Lead Details
+        <span class="text-muted fs-5 ms-2">#{{ lead.id }} - {{ lead.company }}</span>
+    </h1>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="mb-0">Lead Information</h5>
+                    {% if lead.status == 'Pending' %}
+                    <span class="badge bg-warning">Pending</span>
+                    {% elif lead.status == 'Accepted' %}
+                    <span class="badge bg-success">Accepted</span>
+                    {% elif lead.status == 'Rejected' %}
+                    <span class="badge bg-danger">Rejected</span>
+                    {% elif lead.status == 'Resubmitted' %}
+                    <span class="badge bg-info">Resubmitted</span>
+                    {% endif %}
+                </div>
+                {% if deadline and current_user.role in ['admin', 'manager'] %}
+                <div class="alert {% if is_overdue %}alert-danger{% else %}alert-info{% endif %} mb-0 py-2">
+                    <i class="fas fa-{% if is_overdue %}exclamation-triangle{% else %}clock{% endif %} me-2"></i>
+                    <strong>{% if is_overdue %}OVERDUE{% else %}Deadline{% endif %}:</strong> 
+                    This lead must be qualified by {{ format_indian_datetime(deadline, 'datetime') }}
+                    {% if is_overdue %}
+                    <span class="badge bg-danger ms-2">Action Required</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Lead ID:</strong> #{{ lead.id }}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Submitted By:</strong> {{ submitter_name }}
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Created At:</strong> {{ format_indian_datetime(lead.created_at, 'datetime') }}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Status:</strong> {{ lead.status }}
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <h6>Contact Information</h6>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Full Name:</strong> {{ lead.full_name }}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Email:</strong> {{ lead.email }}
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Phone:</strong> {{ lead.phone }}
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <h6>Company Information</h6>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Company:</strong> {{ lead.company }}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Domain:</strong> {{ lead.domain }}
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Industry:</strong> 
+                        <span class="badge bg-primary">{{ lead.industry if lead.industry else 'N/A' }}</span>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <strong>Services Pitched:</strong><br>
+                    {% for service in services %}
+                    <span class="badge bg-secondary me-1">{{ service }}</span>
+                    {% endfor %}
+                </div>
+                
+                <hr>
+                
+                <h6>Location</h6>
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <strong>Country:</strong> {{ lead.country }}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>State:</strong> {{ lead.state }}
+                    </div>
+                    <div class="col-md-4">
+                        <strong>City:</strong> {{ lead.city }}
+                    </div>
+                </div>
+                
+                {% if lead.attachment_path %}
+                <hr>
+                <h6>Attachment</h6>
+                <div class="mb-3">
+                    <strong>File:</strong> {{ lead.attachment_path }}
+                    {% if lead.attachment_path.startswith('http') %}
+                    <a href="{{ lead.attachment_path }}" class="btn btn-sm gradient-btn ms-2" target="_blank" rel="noopener">
+                        <i class="fas fa-download me-1"></i>Open
+                    </a>
+                    {% else %}
+                    <a href="{{ url_for('uploaded_file', filename=lead.attachment_path) }}" class="btn btn-sm gradient-btn ms-2" download>
+                        <i class="fas fa-download me-1"></i>Download
+                    </a>
+                    {% endif %}
+                </div>
+                
+                {% if lead.attachment_path.lower().startswith('http') and lead.attachment_path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')) %}
+                <div class="mt-3">
+                    <strong>Preview:</strong><br>
+                    <img src="{{ lead.attachment_path }}" 
+                         alt="Attachment Preview" 
+                         class="img-fluid rounded border mt-2" 
+                         style="max-width: 500px; max-height: 400px; object-fit: contain;">
+                </div>
+                {% elif not lead.attachment_path.lower().startswith('http') and lead.attachment_path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')) %}
+                <div class="mt-3">
+                    <strong>Preview:</strong><br>
+                    <img src="{{ url_for('view_uploaded_file', filename=lead.attachment_path) }}" 
+                         alt="Attachment Preview" 
+                         class="img-fluid rounded border mt-2" 
+                         style="max-width: 500px; max-height: 400px; object-fit: contain;">
+                </div>
+                {% elif lead.attachment_path.lower().startswith('http') and lead.attachment_path.lower().endswith('.pdf') %}
+                <div class="mt-3">
+                    <strong>Preview:</strong><br>
+                    <iframe src="{{ lead.attachment_path }}" 
+                            width="100%" 
+                            height="500px" 
+                            class="border rounded mt-2"></iframe>
+                </div>
+                {% elif not lead.attachment_path.lower().startswith('http') and lead.attachment_path.lower().endswith('.pdf') %}
+                <div class="mt-3">
+                    <strong>Preview:</strong><br>
+                    <iframe src="{{ url_for('view_uploaded_file', filename=lead.attachment_path) }}" 
+                            width="100%" 
+                            height="500px" 
+                            class="border rounded mt-2"></iframe>
+                </div>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if bd_sales_info %}
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-share-alt me-2"></i>Social Profiles</h5>
+                <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addSocialProfileModal">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+            <div class="card-body">
+                {% if social_profiles %}
+                    {% for profile in social_profiles %}
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <div class="d-flex align-items-center">
+                            {% if profile.platform == 'linkedin' %}
+                            <i class="fab fa-linkedin me-2" style="color: #0077B5; font-size: 1.5rem;"></i>
+                            {% elif profile.platform == 'twitter' %}
+                            <i class="fab fa-twitter me-2" style="color: #1DA1F2; font-size: 1.5rem;"></i>
+                            {% elif profile.platform == 'facebook' %}
+                            <i class="fab fa-facebook me-2" style="color: #1877F2; font-size: 1.5rem;"></i>
+                            {% elif profile.platform == 'website' %}
+                            <i class="fas fa-globe me-2" style="color: #6B7280; font-size: 1.5rem;"></i>
+                            {% else %}
+                            <i class="fas fa-link me-2" style="color: #6B7280; font-size: 1.5rem;"></i>
+                            {% endif %}
+                            <a href="{{ profile.url }}" target="_blank" rel="noopener" class="text-decoration-none">
+                                {{ profile.platform.title() }}
+                            </a>
+                        </div>
+                        <form method="POST" action="{{ url_for('delete_social_profile', lead_id=lead.id, profile_id=profile.id) }}" style="display: inline;">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this social profile?');">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted small mb-0">No social profiles added yet.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Quick Actions - Moved to Left Column -->
+        {% if bd_sales_info %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-phone me-2"></i>Quick Actions</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <a href="mailto:{{ lead.email }}" class="btn w-100 text-white" style="background-color: #3b82f6;" onclick="window.location.href='mailto:{{ lead.email }}'; return false;">
+                            <i class="fas fa-envelope me-2"></i>Send Email
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a href="https://wa.me/{{ lead.phone.replace('+', '').replace(' ', '').replace('-', '') }}" target="_blank" class="btn w-100 text-white" style="background-color: #10b981;">
+                            <i class="fab fa-whatsapp me-2"></i>WhatsApp
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a href="tel:{{ lead.phone }}" class="btn w-100 text-white" style="background-color: #06b6d4;">
+                            <i class="fas fa-phone me-2"></i>Call
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Activity Boxes Section - Bottom of Left Column -->
+        {% if bd_sales_info %}
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-tasks me-2"></i>Activities</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="row g-0">
+                    <!-- Notes Box -->
+                    <div class="col-md-4 border-end">
+                        <div class="p-3 border-bottom" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0"><i class="fas fa-sticky-note me-2 text-info"></i>Notes</h6>
+                                <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#addNoteModal">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="activity-box-content" style="height: 400px; overflow-y: auto; padding: 1rem;">
+                            {% set note_count = 0 %}
+                            {% for entry in timeline %}
+                                {% if entry.type == 'activity' and entry.activity_type == 'note' %}
+                                    {% set note_count = note_count + 1 %}
+                                    <div class="activity-item mb-3 p-2 border-start border-3 border-info bg-light rounded" style="overflow-wrap: anywhere; word-break: break-word;">
+                                        <div class="mb-1">
+                                            <strong class="small d-block mb-1" style="overflow-wrap: anywhere; word-break: break-word;">{{ entry.title or 'Note' }}</strong>
+                                            <small class="text-muted d-block">{{ format_indian_datetime(entry.timestamp, 'datetime') }}</small>
+                                        </div>
+                                        {% if entry.user_name %}
+                                        <div class="text-muted small" style="overflow-wrap: anywhere;">{{ entry.user_name }}</div>
+                                        {% endif %}
+                                        {% if entry.description %}
+                                        <p class="mb-0 mt-1 small" style="white-space: pre-line; overflow-wrap: anywhere; word-break: break-word;">{{ entry.description }}</p>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                            {% if note_count == 0 %}
+                            <p class="text-muted small text-center mt-4">No notes yet</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Tasks Box -->
+                    <div class="col-md-4 border-end">
+                        <div class="p-3 border-bottom" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%);">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0"><i class="fas fa-tasks me-2 text-warning"></i>Tasks</h6>
+                                <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#addTaskModal">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="activity-box-content" style="height: 400px; overflow-y: auto; padding: 1rem;">
+                            {% set task_count = 0 %}
+                            {% for entry in timeline %}
+                                {% if entry.type == 'activity' and entry.activity_type == 'task' %}
+                                    {% set task_count = task_count + 1 %}
+                                    <div class="activity-item task-item mb-3 p-2 border-start border-3 border-warning bg-light rounded {% if entry.completed_at %}task-completed{% endif %}" 
+                                         style="overflow-wrap: anywhere; word-break: break-word; transition: all 0.15s ease;"
+                                         data-activity-id="{{ entry.id }}" data-lead-id="{{ lead.id }}">
+                                        <div class="d-flex align-items-start mb-1">
+                                            <div class="form-check me-2" style="min-width: 24px;">
+                                                <input class="form-check-input task-checkbox" type="checkbox" 
+                                                       id="task-{{ entry.id }}" 
+                                                       {% if entry.completed_at %}checked{% endif %}
+                                                       data-activity-id="{{ entry.id }}"
+                                                       data-lead-id="{{ lead.id }}"
+                                                       style="cursor: pointer; width: 20px; height: 20px;">
+                                            </div>
+                                            <div class="flex-grow-1" style="min-width: 0;">
+                                                <strong class="small d-block mb-1 task-title" style="overflow-wrap: anywhere; word-break: break-word;">
+                                                    {{ entry.title or 'Task' }}
+                                                    {% if entry.completed_at %}
+                                                    <span class="badge bg-success ms-2 task-done-badge"><i class="fas fa-check"></i> Done</span>
+                                                    {% endif %}
+                                                </strong>
+                                                <small class="text-muted d-block">{{ format_indian_datetime(entry.timestamp, 'datetime') }}</small>
+                                            </div>
+                                        </div>
+                                        {% if entry.user_name %}
+                                        <div class="text-muted small ms-4" style="overflow-wrap: anywhere;">
+                                            <i class="fas fa-user me-1"></i>{{ entry.user_name }}
+                                        </div>
+                                        {% endif %}
+                                        {% if entry.description %}
+                                        <p class="mb-0 mt-1 small ms-4 task-description" style="white-space: pre-line; overflow-wrap: anywhere; word-break: break-word;">{{ entry.description }}</p>
+                                        {% endif %}
+                                        {% if entry.due_at %}
+                                        <div class="mt-1 ms-4">
+                                            <span class="badge bg-warning text-dark" style="overflow-wrap: anywhere; word-break: break-word; white-space: normal; display: inline-block; max-width: 100%;"><i class="fas fa-clock me-1"></i>Due: {{ format_indian_datetime(entry.due_at, 'datetime') }}</span>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                            {% if task_count == 0 %}
+                            <p class="text-muted small text-center mt-4">No tasks yet</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Reminders Box -->
+                    <div class="col-md-4">
+                        <div class="p-3 border-bottom" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0"><i class="fas fa-bell me-2 text-success"></i>Reminders</h6>
+                                <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#addReminderModal">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="activity-box-content" style="height: 400px; overflow-y: auto; padding: 1rem;">
+                            {% set reminder_count = 0 %}
+                            {% for entry in timeline %}
+                                {% if entry.type == 'activity' and entry.activity_type == 'follow_up' and entry.reminder_at %}
+                                    {% set reminder_count = reminder_count + 1 %}
+                                    <div class="activity-item task-item reminder-item mb-3 p-2 border-start border-3 border-success bg-light rounded {% if entry.completed_at %}task-completed{% endif %}" 
+                                         style="overflow-wrap: anywhere; word-break: break-word; transition: all 0.15s ease;"
+                                         data-activity-id="{{ entry.id }}" data-lead-id="{{ lead.id }}">
+                                        <div class="d-flex align-items-start mb-1">
+                                            <div class="form-check me-2" style="min-width: 24px;">
+                                                <input class="form-check-input task-checkbox" type="checkbox" 
+                                                       id="reminder-{{ entry.id }}" 
+                                                       {% if entry.completed_at %}checked{% endif %}
+                                                       data-activity-id="{{ entry.id }}"
+                                                       data-lead-id="{{ lead.id }}"
+                                                       style="cursor: pointer; width: 20px; height: 20px;">
+                                            </div>
+                                            <div class="flex-grow-1" style="min-width: 0;">
+                                                <strong class="small d-block mb-1 task-title" style="overflow-wrap: anywhere; word-break: break-word;">
+                                                    {{ entry.title or 'Reminder' }}
+                                                    {% if entry.completed_at %}
+                                                    <span class="badge bg-success ms-2 task-done-badge"><i class="fas fa-check"></i> Done</span>
+                                                    {% endif %}
+                                                </strong>
+                                                <small class="text-muted d-block">{{ format_indian_datetime(entry.timestamp, 'datetime') }}</small>
+                                            </div>
+                                        </div>
+                                        {% if entry.user_name %}
+                                        <div class="text-muted small ms-4" style="overflow-wrap: anywhere;">
+                                            <i class="fas fa-user me-1"></i>{{ entry.user_name }}
+                                        </div>
+                                        {% endif %}
+                                        {% if entry.description %}
+                                        <p class="mb-0 mt-1 small ms-4 task-description" style="white-space: pre-line; overflow-wrap: anywhere; word-break: break-word;">{{ entry.description }}</p>
+                                        {% endif %}
+                                        {% if entry.reminder_at %}
+                                        <div class="mt-1 ms-4">
+                                            <span class="badge bg-success" style="overflow-wrap: anywhere; word-break: break-word; white-space: normal; display: inline-block; max-width: 100%;"><i class="fas fa-bell me-1"></i>Reminder: {{ format_indian_datetime(entry.reminder_at, 'datetime') }}</span>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                            {% if reminder_count == 0 %}
+                            <p class="text-muted small text-center mt-4">No reminders yet</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-md-4">
+        {% if bd_sales_info %}
+        <div class="card mb-3">
+            <div class="card-header text-white" style="background: linear-gradient(135deg, #e76ba6 0%, #a855f7 100%);">
+                <h5 class="mb-0"><i class="fas fa-user-tie me-2"></i>BD Sales Assignment</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <img src="{{ get_avatar_url(bd_sales_info['id']) }}" alt="{{ bd_sales_info['name'] }}" class="rounded-circle me-3" style="width: 60px; height: 60px; object-fit: cover;">
+                    <div>
+                        <h6 class="mb-0">{{ bd_sales_info['name'] }}</h6>
+                        <small class="text-muted">{{ bd_sales_info['email'] }}</small>
+                    </div>
+                </div>
+                
+                {% if current_stage %}
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>Current Stage:</strong>
+                        {% if current_user.role in ['admin', 'manager'] or (current_user.role == 'bd_sales' and current_user.id == lead.assigned_bd_id) %}
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editStageModal">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                    <span class="badge bg-info">{{ current_stage['name'] }}</span>
+                </div>
+                {% endif %}
+                
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>Deal Amount:</strong>
+                        {% if current_user.role in ['admin', 'manager'] or (current_user.role == 'bd_sales' and current_user.id == lead.assigned_bd_id) %}
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editDealAmountModal">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                    {% if lead.deal_amount %}
+                    <span class="fs-5 text-success">${{ "{:,.2f}".format(lead.deal_amount) }}</span>
+                    {% else %}
+                    <span class="text-muted">Not set</span>
+                    {% endif %}
+                </div>
+                
+                <div class="mb-2">
+                    <small class="text-muted">Assigned: {{ format_indian_datetime(lead.assigned_to_bd_at, 'datetime') if lead.assigned_to_bd_at else 'N/A' }}</small>
+                </div>
+                
+                {% if current_user.role in ['admin', 'manager', 'bd_sales'] %}
+                <a href="{{ url_for('assign_bd_sales', lead_id=lead.id) }}" class="btn btn-sm btn-outline-primary w-100">
+                    <i class="fas fa-exchange-alt me-1"></i> Reassign
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Actions</h5>
+            </div>
+            <div class="card-body">
+                {% if current_user.role in ['admin', 'manager'] %}
+                    {% if lead.status in ['Pending', 'Resubmitted'] %}
+                    <form method="POST" action="{{ url_for('accept_lead', lead_id=lead.id) }}" class="mb-2">
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="fas fa-check-circle me-2"></i>Accept Lead
+                        </button>
+                    </form>
+                    <a href="{{ url_for('reject_lead', lead_id=lead.id) }}" class="btn btn-danger w-100 mb-2">
+                        <i class="fas fa-times-circle me-2"></i>Reject Lead
+                    </a>
+                    <a href="{{ url_for('edit_lead', lead_id=lead.id) }}" class="btn btn-warning w-100">
+                        <i class="fas fa-edit me-2"></i>Edit Lead
+                    </a>
+                    {% elif lead.status == 'Accepted' %}
+                    <div class="alert alert-success mb-3">
+                        <i class="fas fa-check-circle me-2"></i>This lead has been accepted.
+                    </div>
+                    
+                    {% if not bd_sales_info %}
+                    <a href="{{ url_for('assign_bd_sales', lead_id=lead.id) }}" class="btn btn-primary w-100 mb-2">
+                        <i class="fas fa-user-tie me-2"></i>Assign to BD Sales
+                    </a>
+                    <div class="alert alert-warning py-2 px-3 mb-3">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        <small>This lead needs to be assigned to BD Sales team.</small>
+                    </div>
+                    {% else %}
+                    <div class="card mb-3" style="background: linear-gradient(135deg, rgba(231, 107, 166, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%); border: 1px solid rgba(168, 85, 247, 0.3);">
+                        <div class="card-body p-3">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="fas fa-user-tie me-2" style="color: #a855f7;"></i>
+                                <strong class="small">Assigned to BD Sales</strong>
+                            </div>
+                            <div class="d-flex align-items-center">
+                                <img src="{{ get_avatar_url(bd_sales_info['id']) }}" 
+                                     alt="{{ bd_sales_info['name'] }}" 
+                                     class="rounded-circle me-2" 
+                                     style="width: 32px; height: 32px; object-fit: cover;">
+                                <div>
+                                    <div class="fw-bold small">{{ bd_sales_info['name'] }}</div>
+                                    <div class="text-muted" style="font-size: 0.75rem;">{{ bd_sales_info['email'] }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <a href="{{ url_for('revert_lead', lead_id=lead.id) }}" class="btn btn-outline-danger w-100 mb-2">
+                        <i class="fas fa-undo me-2"></i>Re-Reject Lead
+                    </a>
+                    <a href="{{ url_for('edit_lead', lead_id=lead.id) }}" class="btn btn-warning w-100">
+                        <i class="fas fa-edit me-2"></i>Edit Lead
+                    </a>
+                    {% elif lead.status == 'Rejected' %}
+                    <div class="alert alert-danger mb-3">
+                        <i class="fas fa-times-circle me-2"></i>This lead has been rejected.
+                    </div>
+                    <a href="{{ url_for('edit_lead', lead_id=lead.id) }}" class="btn btn-warning w-100">
+                        <i class="fas fa-edit me-2"></i>Edit Lead
+                    </a>
+                    {% endif %}
+                {% elif current_user.role == 'marketer' %}
+                    {% if lead.status == 'Rejected' or lead.status == 'Resubmitted' %}
+                    <a href="{{ url_for('edit_lead', lead_id=lead.id) }}" class="btn btn-warning w-100 mb-2">
+                        <i class="fas fa-edit me-2"></i>Edit Lead
+                    </a>
+                    {% if lead.status == 'Rejected' %}
+                    <a href="{{ url_for('resubmit_lead', lead_id=lead.id) }}" class="btn btn-primary w-100">
+                        <i class="fas fa-paper-plane me-2"></i>Resubmit Lead
+                    </a>
+                    <p class="text-muted mt-3 small">This lead was rejected. You can edit the details and then resubmit it.</p>
+                    {% endif %}
+                    {% elif lead.status == 'Pending' %}
+                    <p class="text-warning">This lead is pending review.</p>
+                    {% elif lead.status == 'Accepted' %}
+                    <p class="text-success">This lead has been accepted!</p>
+                    {% elif lead.status == 'Resubmitted' %}
+                    <p class="text-info">This lead has been resubmitted and is awaiting re-review.</p>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Unified Activity Timeline -->
+        <div class="card timeline-wrapper mt-3">
+            <div class="card-header" style="background: linear-gradient(135deg, #e76ba6 0%, #a855f7 100%);">
+                <h5 class="mb-0 text-white"><i class="fas fa-stream me-2"></i>Activity Timeline</h5>
+            </div>
+            <div class="card-body timeline-body p-0">
+                <div class="timeline-container p-3">
+                    {% if timeline %}
+                        {% for entry in timeline %}
+                        <div class="timeline-entry mb-3 pb-3 border-bottom" style="overflow-wrap: anywhere; word-break: break-word;">
+                            <div class="d-flex">
+                                <div class="timeline-icon me-3 flex-shrink-0">
+                                    {% if entry.type == 'activity' %}
+                                        {% if entry.activity_type == 'note' %}
+                                        <span class="badge rounded-circle bg-info" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                            <i class="fas fa-sticky-note"></i>
+                                        </span>
+                                        {% elif entry.activity_type == 'task' %}
+                                        <span class="badge rounded-circle bg-warning" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                            <i class="fas fa-tasks"></i>
+                                        </span>
+                                        {% elif entry.activity_type == 'follow_up' %}
+                                        <span class="badge rounded-circle bg-success" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                            <i class="fas fa-bell"></i>
+                                        </span>
+                                        {% elif entry.activity_type == 'email_log' %}
+                                        <span class="badge rounded-circle bg-primary" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                            <i class="fas fa-envelope"></i>
+                                        </span>
+                                        {% elif entry.activity_type == 'call_log' %}
+                                        <span class="badge rounded-circle bg-dark" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                            <i class="fas fa-phone"></i>
+                                        </span>
+                                        {% endif %}
+                                    {% elif entry.type == 'status_change' %}
+                                    <span class="badge rounded-circle bg-secondary" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                        <i class="fas fa-exchange-alt"></i>
+                                    </span>
+                                    {% elif entry.type == 'assignment' %}
+                                    <span class="badge rounded-circle" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #e76ba6 0%, #a855f7 100%);">
+                                        <i class="fas fa-user-tie"></i>
+                                    </span>
+                                    {% elif entry.type == 'deal_amount_change' %}
+                                    <span class="badge rounded-circle bg-success" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                        <i class="fas fa-dollar-sign"></i>
+                                    </span>
+                                    {% else %}
+                                    <span class="badge rounded-circle bg-secondary" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                        <i class="fas fa-info"></i>
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="timeline-content flex-grow-1" style="min-width: 0;">
+                                    <div class="mb-1">
+                                        <strong class="small d-block mb-1" style="overflow-wrap: anywhere; word-break: break-word;">{{ entry.title or entry.type.replace('_', ' ').title() }}</strong>
+                                        <small class="text-muted d-block">{{ format_indian_datetime(entry.timestamp, 'datetime') }}</small>
+                                    </div>
+                                    
+                                    {% if entry.user_name %}
+                                    <div class="text-muted small" style="overflow-wrap: anywhere;">
+                                        <i class="fas fa-user me-1"></i>{{ entry.user_name }}
+                                    </div>
+                                    {% endif %}
+                                    
+                                    {% if entry.description %}
+                                    <p class="mb-0 mt-1 small text-muted" style="white-space: pre-line; overflow-wrap: anywhere; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">{{ entry.description }}</p>
+                                    {% endif %}
+                                    
+                                    {% if entry.type == 'activity' %}
+                                        {% if entry.completed_at %}
+                                        <span class="badge bg-success mt-1"><i class="fas fa-check me-1"></i>Completed</span>
+                                        {% endif %}
+                                        {% if entry.due_at %}
+                                        <span class="badge bg-warning text-dark mt-1" style="overflow-wrap: anywhere; word-break: break-word; white-space: normal; display: inline-block; max-width: 100%;"><i class="fas fa-clock me-1"></i>Due: {{ format_indian_datetime(entry.due_at, 'datetime') }}</span>
+                                        {% endif %}
+                                        {% if entry.reminder_at %}
+                                        <span class="badge bg-success mt-1" style="overflow-wrap: anywhere; word-break: break-word; white-space: normal; display: inline-block; max-width: 100%;"><i class="fas fa-bell me-1"></i>Reminder: {{ format_indian_datetime(entry.reminder_at, 'datetime') }}</span>
+                                        {% endif %}
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted small text-center py-4">No activity yet</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Note Modal -->
+{% if bd_sales_info and (current_user.role in ['admin', 'manager'] or (current_user.role == 'bd_sales' and current_user.id == lead.assigned_bd_id)) %}
+<div class="modal fade" id="addNoteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_activity', lead_id=lead.id) }}">
+                {{ activity_form.hidden_tag() }}
+                <input type="hidden" name="activity_type" value="note">
+                <div class="modal-header" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);">
+                    <h5 class="modal-title"><i class="fas fa-sticky-note me-2 text-info"></i>Add Note</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="noteTitle" class="form-label">Title (Optional)</label>
+                        <input type="text" class="form-control" id="noteTitle" name="title" placeholder="E.g., 'Discussion Summary'">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="noteDescription" class="form-label">Note Details</label>
+                        <textarea class="form-control" id="noteDescription" name="description" rows="4" placeholder="Write your note here..." required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-info">
+                        <i class="fas fa-save me-1"></i>Add Note
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Task Modal -->
+<div class="modal fade" id="addTaskModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_activity', lead_id=lead.id) }}">
+                {{ activity_form.hidden_tag() }}
+                <input type="hidden" name="activity_type" value="task">
+                <div class="modal-header" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%);">
+                    <h5 class="modal-title"><i class="fas fa-tasks me-2 text-warning"></i>Add Task</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="taskTitle" class="form-label">Task Title</label>
+                        <input type="text" class="form-control" id="taskTitle" name="title" placeholder="E.g., 'Send proposal'" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="taskDescription" class="form-label">Task Description</label>
+                        <textarea class="form-control" id="taskDescription" name="description" rows="3" placeholder="Additional details..."></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="taskDueDate" class="form-label">Due Date (IST)</label>
+                        <input type="datetime-local" class="form-control" id="taskDueDate" name="due_at">
+                        <small class="form-text text-muted">All times are in Indian Standard Time (UTC+05:30)</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-save me-1"></i>Add Task
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Reminder Modal -->
+<div class="modal fade" id="addReminderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_activity', lead_id=lead.id) }}">
+                {{ activity_form.hidden_tag() }}
+                <input type="hidden" name="activity_type" value="follow_up">
+                <div class="modal-header" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);">
+                    <h5 class="modal-title"><i class="fas fa-bell me-2 text-success"></i>Add Reminder</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="reminderTitle" class="form-label">Reminder Title</label>
+                        <input type="text" class="form-control" id="reminderTitle" name="title" placeholder="E.g., 'Follow-up call'" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="reminderDescription" class="form-label">Reminder Details</label>
+                        <textarea class="form-control" id="reminderDescription" name="description" rows="3" placeholder="Additional details..."></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="reminderDateTime" class="form-label">Reminder Date & Time (IST)</label>
+                        <input type="datetime-local" class="form-control" id="reminderDateTime" name="reminder_at" required>
+                        <small class="form-text text-muted">All times are in Indian Standard Time (UTC+05:30)</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-save me-1"></i>Add Reminder
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Add Social Profile Modal -->
+{% if bd_sales_info %}
+<div class="modal fade" id="addSocialProfileModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_social_profile', lead_id=lead.id) }}">
+                {{ social_profile_form.hidden_tag() }}
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-share-alt me-2"></i>Add Social Profile</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        {{ social_profile_form.platform.label(class="form-label") }}
+                        {{ social_profile_form.platform(class="form-select" + (" is-invalid" if social_profile_form.platform.errors else "")) }}
+                        {% if social_profile_form.platform.errors %}
+                            <div class="invalid-feedback">
+                                {{ social_profile_form.platform.errors[0] }}
+                            </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ social_profile_form.url.label(class="form-label") }}
+                        {{ social_profile_form.url(class="form-control" + (" is-invalid" if social_profile_form.url.errors else ""), placeholder="https://...") }}
+                        {% if social_profile_form.url.errors %}
+                            <div class="invalid-feedback">
+                                {{ social_profile_form.url.errors[0] }}
+                            </div>
+                        {% endif %}
+                        <small class="form-text text-muted">Enter the full URL (e.g., https://linkedin.com/in/username)</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i>Add Profile
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Deal Amount Modal -->
+<div class="modal fade" id="editDealAmountModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('update_deal_amount', lead_id=lead.id) }}">
+                {{ deal_amount_form.hidden_tag() }}
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-dollar-sign me-2"></i>Update Deal Amount</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        {{ deal_amount_form.deal_amount.label(class="form-label") }}
+                        {{ deal_amount_form.deal_amount(class="form-control" + (" is-invalid" if deal_amount_form.deal_amount.errors else ""), placeholder="0.00") }}
+                        {% if deal_amount_form.deal_amount.errors %}
+                            <div class="invalid-feedback">
+                                {{ deal_amount_form.deal_amount.errors[0] }}
+                            </div>
+                        {% endif %}
+                        <small class="form-text text-muted">Enter the estimated or confirmed deal value in USD. Leave blank to clear.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i>Update Amount
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Stage Modal -->
+<div class="modal fade" id="editStageModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-sitemap me-2"></i>Update Pipeline Stage</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="stageSelect" class="form-label">Select New Stage</label>
+                    <select id="stageSelect" class="form-select">
+                        {% for stage in all_stages %}
+                        <option value="{{ stage.id }}" {% if current_stage and stage.id == current_stage['id'] %}selected{% endif %}>
+                            {{ stage.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <small class="form-text text-muted">Select the pipeline stage that reflects the current status of this lead.</small>
+                </div>
+                <div id="stageUpdateError" class="alert alert-danger d-none" role="alert"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveStageBtn">
+                    <i class="fas fa-save me-1"></i>Update Stage
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Double-submit prevention for all activity forms
+    const activityForms = document.querySelectorAll('#addNoteModal form, #addTaskModal form, #addReminderModal form');
+    activityForms.forEach(function(form) {
+        form.addEventListener('submit', function(e) {
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn.disabled) {
+                e.preventDefault();
+                return false;
+            }
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+        });
+    });
+    
+    const saveStageBtn = document.getElementById('saveStageBtn');
+    const stageSelect = document.getElementById('stageSelect');
+    const stageUpdateError = document.getElementById('stageUpdateError');
+    const editStageModal = new bootstrap.Modal(document.getElementById('editStageModal'));
+    
+    if (saveStageBtn) {
+        saveStageBtn.addEventListener('click', function() {
+            const newStageId = stageSelect.value;
+            const leadId = {{ lead.id }};
+            
+            // Disable button during request
+            saveStageBtn.disabled = true;
+            saveStageBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Updating...';
+            
+            // Send PATCH request to update stage
+            fetch(`/api/lead/${leadId}/stage`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    stage_id: parseInt(newStageId)
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Close modal and reload page to show updated stage
+                    editStageModal.hide();
+                    location.reload();
+                } else {
+                    // Show error message
+                    stageUpdateError.textContent = data.message || 'Failed to update stage';
+                    stageUpdateError.classList.remove('d-none');
+                    saveStageBtn.disabled = false;
+                    saveStageBtn.innerHTML = '<i class="fas fa-save me-1"></i>Update Stage';
+                }
+            })
+            .catch(error => {
+                console.error('Error updating stage:', error);
+                stageUpdateError.textContent = 'An error occurred while updating the stage. Please try again.';
+                stageUpdateError.classList.remove('d-none');
+                saveStageBtn.disabled = false;
+                saveStageBtn.innerHTML = '<i class="fas fa-save me-1"></i>Update Stage';
+            });
+        });
+    }
+});
+</script>
+{% endif %}
+
+<!-- Task Checkbox Toggle Script -->
+{% if bd_sales_info %}
+<script src="{{ url_for('static', filename='js/lead_tasks.js') }}"></script>
+{% endif %}
+
+{% endblock %}

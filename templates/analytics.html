@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics Dashboard{% endblock %}
+
+{% block authenticated_content %}
+<h1 class="page-title fade-in-up">
+    <i class="fas fa-chart-pie me-3"></i>Analytics Dashboard
+</h1>
+
+<div class="row mb-4 fade-in-up">
+    <div class="col-md-2 mb-3">
+        <div class="stat-card primary">
+            <h3>{{ total_leads }}</h3>
+            <p>Total Leads</p>
+            <i class="fas fa-users"></i>
+        </div>
+    </div>
+    
+    <div class="col-md-2 mb-3">
+        <div class="stat-card warning">
+            <h3>{{ pending_leads }}</h3>
+            <p>Pending</p>
+            <i class="fas fa-clock"></i>
+        </div>
+    </div>
+    
+    <div class="col-md-2 mb-3">
+        <div class="stat-card success">
+            <h3>{{ accepted_leads }}</h3>
+            <p>Accepted</p>
+            <i class="fas fa-check-circle"></i>
+        </div>
+    </div>
+    
+    <div class="col-md-2 mb-3">
+        <div class="stat-card danger">
+            <h3>{{ rejected_leads }}</h3>
+            <p>Rejected</p>
+            <i class="fas fa-times-circle"></i>
+        </div>
+    </div>
+    
+    <div class="col-md-2 mb-3">
+        <div class="stat-card info">
+            <h3>{{ resubmitted_leads }}</h3>
+            <p>Resubmitted</p>
+            <i class="fas fa-redo"></i>
+        </div>
+    </div>
+    
+    <div class="col-md-2 mb-3">
+        <div class="stat-card primary">
+            <h3>{{ "%.1f"|format(conversion_rate) }}%</h3>
+            <p>Conversion</p>
+            <i class="fas fa-percentage"></i>
+        </div>
+    </div>
+</div>
+
+<div class="row fade-in-up">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-chart-pie me-2"></i>Lead Status Distribution
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-chart-bar me-2"></i>Leads by Marketer
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="marketerChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row fade-in-up">
+    <div class="col-md-12 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-chart-line me-2"></i>Leads Over Time (Last 30 Days)
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="timelineChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row fade-in-up">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-cog me-2"></i>Top Services
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="servicesChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-list me-2"></i>Marketer Performance
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Marketer</th>
+                                <th class="text-end">Total Leads</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for marketer in leads_by_marketer %}
+                            <tr>
+                                <td>{{ marketer.name }}</td>
+                                <td class="text-end"><span class="badge bg-primary">{{ marketer.count }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const statusChart = new Chart(document.getElementById('statusChart'), {
+    type: 'doughnut',
+    data: {
+        labels: ['Pending', 'Accepted', 'Rejected', 'Resubmitted'],
+        datasets: [{
+            data: [{{ pending_leads }}, {{ accepted_leads }}, {{ rejected_leads }}, {{ resubmitted_leads }}],
+            backgroundColor: ['#f59e0b', '#10b981', '#ef4444', '#3b82f6']
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+
+const marketerChart = new Chart(document.getElementById('marketerChart'), {
+    type: 'bar',
+    data: {
+        labels: [{% for m in leads_by_marketer %}'{{ m.name }}'{% if not loop.last %}, {% endif %}{% endfor %}],
+        datasets: [{
+            label: 'Leads',
+            data: [{% for m in leads_by_marketer %}{{ m.count }}{% if not loop.last %}, {% endif %}{% endfor %}],
+            backgroundColor: 'rgba(79, 70, 229, 0.8)',
+            borderColor: 'rgba(79, 70, 229, 1)',
+            borderWidth: 2
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                display: false
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    stepSize: 1
+                }
+            }
+        }
+    }
+});
+
+const timelineChart = new Chart(document.getElementById('timelineChart'), {
+    type: 'line',
+    data: {
+        labels: [{% for item in leads_over_time %}'{{ item.date }}'{% if not loop.last %}, {% endif %}{% endfor %}],
+        datasets: [{
+            label: 'Leads Submitted',
+            data: [{% for item in leads_over_time %}{{ item.count }}{% if not loop.last %}, {% endif %}{% endfor %}],
+            fill: true,
+            backgroundColor: 'rgba(79, 70, 229, 0.2)',
+            borderColor: 'rgba(79, 70, 229, 1)',
+            borderWidth: 2,
+            tension: 0.4
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                display: false
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    stepSize: 1
+                }
+            }
+        }
+    }
+});
+
+const servicesChart = new Chart(document.getElementById('servicesChart'), {
+    type: 'bar',
+    data: {
+        labels: [{% for s in leads_by_service %}'{{ s.name }}'{% if not loop.last %}, {% endif %}{% endfor %}],
+        datasets: [{
+            label: 'Leads',
+            data: [{% for s in leads_by_service %}{{ s.count }}{% if not loop.last %}, {% endif %}{% endfor %}],
+            backgroundColor: 'rgba(16, 185, 129, 0.8)',
+            borderColor: 'rgba(16, 185, 129, 1)',
+            borderWidth: 2
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        plugins: {
+            legend: {
+                display: false
+            }
+        },
+        scales: {
+            x: {
+                beginAtZero: true,
+                ticks: {
+                    stepSize: 1
+                }
+            }
+        }
+    }
+});
+</script>
+{% endblock %}
