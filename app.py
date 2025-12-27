@@ -63,7 +63,7 @@ compress = Compress(app)
 toolbar = DebugToolbarExtension(app)
 # htmlmin = HTMLMIN(app)
 
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", ping_timeout=10)
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -1002,16 +1002,62 @@ def dashboard():
     per_page = 50
     offset = (page - 1) * per_page
     
-    # Get total count for pagination
-    count_query = base_query.replace(' ORDER BY l.created_at DESC', '').replace('SELECT l.*, u.name as submitter_name, la.deadline_at, CASE WHEN la.deadline_at < CURRENT_TIMESTAMP THEN 1 ELSE 0 END as is_overdue', 'SELECT COUNT(*) as total')
-    cursor.execute(count_query, params)
-    total_leads = cursor.fetchone()['total']
+    # Build count query separately
+    if current_user.role == 'marketer':
+        count_query = '''
+            SELECT COUNT(*) as total
+            FROM leads l
+            WHERE l.submitted_by_user_id = %s
+        '''
+        count_params = [current_user.id]
+    elif current_user.role == 'bd_sales':
+        count_query = '''
+            SELECT COUNT(*) as total
+            FROM leads l
+            WHERE l.assigned_bd_id = %s
+        '''
+        count_params = [current_user.id]
+    else:
+        count_query = '''
+            SELECT COUNT(*) as total
+            FROM leads l
+        '''
+        count_params = []
+    
+    # Add same filters to count_query
+    if status_filter:
+        count_query += ' AND l.status = %s'
+        count_params.append(status_filter)
+    
+    if service_filter:
+        count_query += ' AND (l.services_csv LIKE %s OR l.services_csv LIKE %s OR l.services_csv LIKE %s OR l.services_csv = %s)'
+        count_params.extend([f'{service_filter},%', f'%,{service_filter},%', f'%,{service_filter}', service_filter])
+    
+    if submitter_filter and current_user.role in ['admin', 'manager']:
+        count_query += ' AND l.submitted_by_user_id = %s'
+        count_params.append(submitter_filter)
+    
+    if date_from:
+        count_query += ' AND DATE(l.created_at) >= %s'
+        count_params.append(date_from)
+    
+    if date_to:
+        count_query += ' AND DATE(l.created_at) <= %s'
+        count_params.append(date_to)
+    
+    execute_query(cursor, count_query, count_params)
+    result = cursor.fetchone()
+    print(f"Count result: {result}, type: {type(result)}")
+    if result is None:
+        total_leads = 0
+    else:
+        total_leads = result['total']
     total_pages = (total_leads + per_page - 1) // per_page
     
     # Get status counts for stats
-    status_count_query = base_query.replace(' ORDER BY l.created_at DESC', '').replace('SELECT l.*, u.name as submitter_name, la.deadline_at, CASE WHEN la.deadline_at < CURRENT_TIMESTAMP THEN 1 ELSE 0 END as is_overdue', 'SELECT l.status, COUNT(*) as count')
+    status_count_query = count_query.replace('SELECT COUNT(*) as total', 'SELECT l.status, COUNT(*) as count')
     status_count_query += ' GROUP BY l.status'
-    cursor.execute(status_count_query, params)
+    execute_query(cursor, status_count_query, count_params)
     status_counts_raw = cursor.fetchall()
     status_counts = {row['status']: row['count'] for row in status_counts_raw}
     
@@ -1019,7 +1065,7 @@ def dashboard():
     base_query += ' LIMIT %s OFFSET %s'
     params.extend([per_page, offset])
     
-    cursor.execute(base_query, params)
+    execute_query(cursor, base_query, params)
     leads_raw = cursor.fetchall()
     
     # Format leads for template
@@ -1032,23 +1078,23 @@ def dashboard():
             'is_overdue': bool(lead['is_overdue'])
         })
     
-    cursor.execute('SELECT * FROM services ORDER BY name')
+    execute_query(cursor, 'SELECT * FROM services ORDER BY name', [])
     services = cursor.fetchall()
     
     # Only admin and manager can filter by submitter
     submitters = []
     if current_user.role in ['admin', 'manager']:
-        cursor.execute('SELECT id, name FROM users WHERE role = %s ORDER BY name', ('marketer',))
+        execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ['marketer'])
         submitters = cursor.fetchall()
     
-    cursor.execute('''
+    execute_query(cursor, '''
         SELECT * FROM lead_targets 
         WHERE assignee_id = %s 
           AND period_start <= DATE('now') 
           AND period_end >= DATE('now')
         ORDER BY period_end ASC
         LIMIT 3
-    ''', (current_user.id,))
+    ''', [current_user.id])
     active_targets_raw = cursor.fetchall()
     
     active_targets = []
