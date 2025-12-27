@@ -1021,6 +1021,7 @@ def dashboard():
         count_query = '''
             SELECT COUNT(*) as total
             FROM leads l
+            WHERE 1=1
         '''
         count_params = []
     
@@ -1045,6 +1046,9 @@ def dashboard():
         count_query += ' AND DATE(l.created_at) <= %s'
         count_params.append(date_to)
     
+    # Debug: log the final SQL and params before executing the count query
+    print("DEBUG: count_query=>>\n" + count_query + "\n<<")
+    print("DEBUG: count_params=", count_params)
     execute_query(cursor, count_query, count_params)
     result = cursor.fetchone()
     print(f"Count result: {result}, type: {type(result)}")
@@ -1087,14 +1091,14 @@ def dashboard():
         execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ['marketer'])
         submitters = cursor.fetchall()
     
-    execute_query(cursor, '''
-        SELECT * FROM lead_targets 
-        WHERE assignee_id = %s 
-          AND period_start <= DATE('now') 
-          AND period_end >= DATE('now')
-        ORDER BY period_end ASC
-        LIMIT 3
-    ''', [current_user.id])
+        execute_query(cursor, '''
+                SELECT * FROM lead_targets 
+                WHERE assignee_id = %s 
+                    AND period_start <= CURRENT_DATE
+                    AND period_end >= CURRENT_DATE
+                ORDER BY period_end ASC
+                LIMIT 3
+        ''', [current_user.id])
     active_targets_raw = cursor.fetchall()
     
     active_targets = []
