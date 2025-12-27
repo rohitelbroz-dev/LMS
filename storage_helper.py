@@ -37,7 +37,14 @@ if STORAGE_BACKEND == 'cloudinary':
             secure=True,
         )
         IS_CLOUDINARY = True
+        # Log Cloudinary client version to help debug SDK-specific issues
+        try:
+            cv = getattr(cloudinary, '__version__', None) or getattr(cloudinary, 'version', None)
+        except Exception:
+            cv = None
+        import sys
         print(f"[STORAGE] Cloudinary backend configured for cloud: {cloud_name}")
+        print(f"[STORAGE] Cloudinary client version: {cv}; Python: {sys.version.splitlines()[0]}")
     except Exception as e:
         print(f"[STORAGE] WARNING: Failed to initialize Cloudinary: {e}")
         IS_CLOUDINARY = False
@@ -67,19 +74,33 @@ def upload_file(file_data: bytes, filename: str, folder: str = 'uploads') -> Dic
         except Exception:
             pass
 
-        result = cloudinary.uploader.upload(
-            file_obj,
-            public_id=public_id,
-            resource_type=resource_type,
-            overwrite=False,
-        )
+        # Primary attempt: pass file-like object
+        try:
+            result = cloudinary.uploader.upload(
+                file_obj,
+                public_id=public_id,
+                resource_type=resource_type,
+                overwrite=False,
+            )
+        except RecursionError:
+            # Some environments/SDK versions raise RecursionError on file-like objects.
+            # Retry by passing raw bytes instead as a fallback.
+            try:
+                print('[STORAGE] RecursionError detected on file-like upload — retrying with raw bytes')
+                result = cloudinary.uploader.upload(
+                    file_obj.getvalue(),
+                    public_id=public_id,
+                    resource_type=resource_type,
+                    overwrite=False,
+                )
+            except Exception as e2:
+                tb = traceback.format_exc()
+                print(f"[STORAGE] Cloudinary upload retry failed: {e2}\n{tb}")
+                return {'error': str(e2), 'trace': tb}
+
         url = result.get('secure_url') or result.get('url')
         print(f"[STORAGE] Uploaded to Cloudinary: {public_id} -> {url}")
         return {'url': url, 'public_id': public_id, 'resource_type': resource_type}
-    except RecursionError as re:
-        tb = traceback.format_exc()
-        print(f"[STORAGE] Cloudinary upload failed with RecursionError: {re}\n{tb}")
-        return {'error': 'RecursionError during Cloudinary upload', 'trace': tb}
     except Exception as e:
         tb = traceback.format_exc()
         print(f"[STORAGE] Cloudinary upload failed: {e}\n{tb}")
