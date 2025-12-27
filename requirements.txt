@@ -14,3 +14,7 @@ eventlet
 psycopg2-binary
 python-dotenv
 cloudinary>=1.30.0
+Flask-Caching
+Flask-Compress
+Flask-DebugToolbar
+Flask-HTMLmin

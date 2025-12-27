@@ -2,6 +2,7 @@ import os
 import sqlite3
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask import g
 
 DATABASE = 'leads.db'
 
@@ -11,36 +12,74 @@ USE_POSTGRES = os.environ.get('DATABASE_URL') is not None
 if USE_POSTGRES:
     import psycopg2
     import psycopg2.extras
+    # from psycopg2 import pool
+
+    # Create connection pool
+    # db_pool = None
+    # if os.environ.get('DATABASE_URL'):
+    #     db_pool = pool.SimpleConnectionPool(1, 3, os.environ.get('DATABASE_URL'), sslmode=os.environ.get('PGSSLMODE', 'require'))
+    # else:
+    #     db_pool = pool.SimpleConnectionPool(1, 3,
+    #         host=os.environ.get('PGHOST'),
+    #         port=os.environ.get('PGPORT'),
+    #         user=os.environ.get('PGUSER'),
+    #         password=os.environ.get('PGPASSWORD'),
+    #         database=os.environ.get('PGDATABASE'),
+    #         sslmode=os.environ.get('PGSSLMODE', 'require')
+    # )
 
 def get_db():
     """Get database connection - PostgreSQL or SQLite based on environment"""
-    if USE_POSTGRES:
-        # Prefer DATABASE_URL if provided (works with Neon & Render). Fall back to PGHOST/PGUSER if not.
-        database_url = os.environ.get('DATABASE_URL')
-        sslmode = os.environ.get('PGSSLMODE', 'require')
-        if database_url:
-            # Use the full DATABASE_URL; enforce SSL by default
-            conn = psycopg2.connect(database_url, sslmode=sslmode)
+    if 'db' not in g:
+        if USE_POSTGRES:
+            # Prefer DATABASE_URL if provided (works with Neon & Render). Fall back to PGHOST/PGUSER if not.
+            database_url = os.environ.get('DATABASE_URL')
+            sslmode = os.environ.get('PGSSLMODE', 'require')
+            if database_url:
+                # Use the full DATABASE_URL; enforce SSL by default
+                g.db = psycopg2.connect(database_url, sslmode=sslmode)
+            else:
+                # Fall back to individual PG* environment variables
+                g.db = psycopg2.connect(
+                    host=os.environ.get('PGHOST'),
+                    port=os.environ.get('PGPORT'),
+                    user=os.environ.get('PGUSER'),
+                    password=os.environ.get('PGPASSWORD'),
+                    database=os.environ.get('PGDATABASE'),
+                    sslmode=sslmode
+                )
+            # Use RealDictCursor for dict-like row access (similar to sqlite3.Row)
+            g.db.cursor_factory = psycopg2.extras.RealDictCursor
         else:
-            # Fall back to individual PG* environment variables
-            conn = psycopg2.connect(
-                host=os.environ.get('PGHOST'),
-                port=os.environ.get('PGPORT'),
-                user=os.environ.get('PGUSER'),
-                password=os.environ.get('PGPASSWORD'),
-                database=os.environ.get('PGDATABASE'),
-                sslmode=sslmode
-            )
-        # Use RealDictCursor for dict-like row access (similar to sqlite3.Row)
-        conn.cursor_factory = psycopg2.extras.RealDictCursor
-        return conn
+            g.db = sqlite3.connect(DATABASE, timeout=30.0)
+            g.db.row_factory = sqlite3.Row
+            g.db.execute('PRAGMA journal_mode=WAL')
+            g.db.execute('PRAGMA foreign_keys = ON')
     else:
-        # SQLite connection (fallback for development)
-        conn = sqlite3.connect(DATABASE, timeout=30.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute('PRAGMA journal_mode=WAL')
-        conn.execute('PRAGMA foreign_keys = ON')
-        return conn
+        # Check if PostgreSQL connection is still alive
+        if USE_POSTGRES and hasattr(g.db, 'closed') and g.db.closed:
+            # Reconnect if closed
+            database_url = os.environ.get('DATABASE_URL')
+            sslmode = os.environ.get('PGSSLMODE', 'require')
+            if database_url:
+                g.db = psycopg2.connect(database_url, sslmode=sslmode)
+            else:
+                g.db = psycopg2.connect(
+                    host=os.environ.get('PGHOST'),
+                    port=os.environ.get('PGPORT'),
+                    user=os.environ.get('PGUSER'),
+                    password=os.environ.get('PGPASSWORD'),
+                    database=os.environ.get('PGDATABASE'),
+                    sslmode=sslmode
+                )
+            g.db.cursor_factory = psycopg2.extras.RealDictCursor
+    return g.db
+
+def close_db(e=None):
+    """Close database connection"""
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
 
 def execute_query(cursor, sql, params=None):
     """Execute SQL using cursor and convert %s placeholders to ? for SQLite when not using Postgres"""

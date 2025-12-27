@@ -11,12 +11,16 @@ import pytz
 from flask import Flask, render_template, redirect, url_for, flash, request, send_file, make_response, send_from_directory, session, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_socketio import SocketIO, emit, join_room
+from flask_caching import Cache
+from flask_compress import Compress
+from flask_debugtoolbar import DebugToolbarExtension
+# from flask_htmlmin import HTMLMIN
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash
 from functools import wraps
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from models import User, get_db, init_db, USE_POSTGRES, execute_query
+from models import User, get_db, init_db, USE_POSTGRES, execute_query, close_db
 from forms import (LoginForm, LeadForm, RejectForm, ResubmitForm, ServiceForm, UserForm, 
                    UserEditForm, ProfileForm, LeadEditForm, TargetForm, BDAssignmentForm,
                    SocialProfileForm, ActivityForm, DealAmountForm, PipelineStageForm)
@@ -50,12 +54,24 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SESSION_SECRET', 'dev-secret-key-change-in-production')
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['CACHE_TYPE'] = 'SimpleCache'  # Use SimpleCache for free tier, or Redis if available
+app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
+
+cache = Cache(app)
+
+compress = Compress(app)
+toolbar = DebugToolbarExtension(app)
+# htmlmin = HTMLMIN(app)
 
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'  # type: ignore[assignment]
+
+@app.teardown_appcontext
+def teardown_db(exception):
+    close_db()
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -981,6 +997,28 @@ def dashboard():
     
     base_query += ' ORDER BY l.created_at DESC'
     
+    # Pagination
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+    offset = (page - 1) * per_page
+    
+    # Get total count for pagination
+    count_query = base_query.replace(' ORDER BY l.created_at DESC', '').replace('SELECT l.*, u.name as submitter_name, la.deadline_at, CASE WHEN la.deadline_at < CURRENT_TIMESTAMP THEN 1 ELSE 0 END as is_overdue', 'SELECT COUNT(*) as total')
+    cursor.execute(count_query, params)
+    total_leads = cursor.fetchone()['total']
+    total_pages = (total_leads + per_page - 1) // per_page
+    
+    # Get status counts for stats
+    status_count_query = base_query.replace(' ORDER BY l.created_at DESC', '').replace('SELECT l.*, u.name as submitter_name, la.deadline_at, CASE WHEN la.deadline_at < CURRENT_TIMESTAMP THEN 1 ELSE 0 END as is_overdue', 'SELECT l.status, COUNT(*) as count')
+    status_count_query += ' GROUP BY l.status'
+    cursor.execute(status_count_query, params)
+    status_counts_raw = cursor.fetchall()
+    status_counts = {row['status']: row['count'] for row in status_counts_raw}
+    
+    # Add LIMIT and OFFSET
+    base_query += ' LIMIT %s OFFSET %s'
+    params.extend([per_page, offset])
+    
     cursor.execute(base_query, params)
     leads_raw = cursor.fetchall()
     
@@ -1045,7 +1083,14 @@ def dashboard():
                              'date_from': date_from,
                              'date_to': date_to,
                              'date_range': date_range
-                         })
+                         },
+                         pagination={
+                             'page': page,
+                             'per_page': per_page,
+                             'total_leads': total_leads,
+                             'total_pages': total_pages
+                         },
+                         status_counts=status_counts)
 
 @app.route('/pipeline')
 @login_required
@@ -3597,17 +3642,23 @@ def add_protected_users_column():
     conn.close()
     print(f'Protected users migration completed. Marked {protected_count} users as protected.')
 
-init_db()
-backfill_acceptance_timestamps()
+with app.app_context():
+    init_db()
+
+with app.app_context():
+    backfill_acceptance_timestamps()
 
 # Step 1: Fix corrupted data from double migration
-fix_double_converted_timestamps()
+with app.app_context():
+    fix_double_converted_timestamps()
 
 # Step 2: Run main migration (with guard, safe to enable)
-migrate_activity_timestamps_to_utc()
+with app.app_context():
+    migrate_activity_timestamps_to_utc()
 
 # Step 3: Add protected users column and mark one user per role as protected
-add_protected_users_column()
+with app.app_context():
+    add_protected_users_column()
 
 scheduler = BackgroundScheduler()
 
@@ -3633,6 +3684,19 @@ scheduler.start()
 print('APScheduler started:')
 print('  - Checking for overdue leads every 30 minutes')
 print('  - Checking for activity reminders every hour')
+
+@app.after_request
+def add_cache_headers(response):
+    if request.path.startswith('/static/'):
+        response.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours
+    return response
+
+@app.errorhandler(500)
+def internal_error(error):
+    import traceback
+    print("500 Error:", error)
+    print(traceback.format_exc())
+    return "Internal Server Error", 500
 
 if __name__ == '__main__':
     try:

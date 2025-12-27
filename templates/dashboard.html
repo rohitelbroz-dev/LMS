@@ -27,7 +27,7 @@
     {% if current_user.role in ['admin', 'manager'] %}
     <div class="col-md-3 mb-3">
         <div class="stat-card primary">
-            <h3>{{ leads|length }}</h3>
+            <h3>{{ pagination.total_leads }}</h3>
             <p>Total Leads</p>
             <i class="fas fa-list"></i>
         </div>
@@ -37,7 +37,7 @@
     {% if current_user.role == 'marketer' %}
     <div class="col-md-4 mb-3">
         <div class="stat-card primary">
-            <h3>{{ leads|length }}</h3>
+            <h3>{{ pagination.total_leads }}</h3>
             <p>My Leads</p>
             <i class="fas fa-list"></i>
         </div>
@@ -46,7 +46,7 @@
     
     <div class="col-md-{{ '3' if current_user.role in ['admin', 'manager'] else '4' }} mb-3">
         <div class="stat-card warning">
-            <h3>{{ leads|map(attribute='lead')|selectattr('status', 'equalto', 'Pending')|list|length }}</h3>
+            <h3>{{ status_counts.get('Pending', 0) }}</h3>
             <p>Pending</p>
             <i class="fas fa-clock"></i>
         </div>
@@ -54,7 +54,7 @@
     
     <div class="col-md-{{ '3' if current_user.role in ['admin', 'manager'] else '4' }} mb-3">
         <div class="stat-card success">
-            <h3>{{ leads|map(attribute='lead')|selectattr('status', 'equalto', 'Accepted')|list|length }}</h3>
+            <h3>{{ status_counts.get('Accepted', 0) }}</h3>
             <p>Accepted</p>
             <i class="fas fa-check-circle"></i>
         </div>
@@ -62,7 +62,7 @@
     
     <div class="col-md-{{ '3' if current_user.role in ['admin', 'manager'] else '4' }} mb-3">
         <div class="stat-card danger">
-            <h3>{{ leads|map(attribute='lead')|selectattr('status', 'equalto', 'Rejected')|list|length }}</h3>
+            <h3>{{ status_counts.get('Rejected', 0) }}</h3>
             <p>Rejected</p>
             <i class="fas fa-times-circle"></i>
         </div>
@@ -159,7 +159,7 @@
 
 <div class="card">
     <div class="card-body">
-        <h5 class="card-title">All Leads ({{ leads|length }})</h5>
+        <h5 class="card-title">All Leads ({{ pagination.total_leads }})</h5>
         
         {% if leads %}
         <div class="table-responsive">
@@ -231,6 +231,43 @@
                 </tbody>
             </table>
         </div>
+        
+        {% if pagination.total_pages > 1 %}
+        <nav aria-label="Leads pagination" class="mt-3">
+            <ul class="pagination justify-content-center">
+                {% if pagination.page > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('dashboard', page=pagination.page-1, status=filters.status, service=filters.service, submitter=filters.submitter, date_from=filters.date_from, date_to=filters.date_to, date_range=filters.date_range) }}">
+                        <i class="fas fa-chevron-left"></i> Previous
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled">
+                    <span class="page-link"><i class="fas fa-chevron-left"></i> Previous</span>
+                </li>
+                {% endif %}
+                
+                {% for page_num in range(max(1, pagination.page-2), min(pagination.total_pages+1, pagination.page+3)) %}
+                <li class="page-item {{ 'active' if page_num == pagination.page else '' }}">
+                    <a class="page-link" href="{{ url_for('dashboard', page=page_num, status=filters.status, service=filters.service, submitter=filters.submitter, date_from=filters.date_from, date_to=filters.date_to, date_range=filters.date_range) }}">{{ page_num }}</a>
+                </li>
+                {% endfor %}
+                
+                {% if pagination.page < pagination.total_pages %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('dashboard', page=pagination.page+1, status=filters.status, service=filters.service, submitter=filters.submitter, date_from=filters.date_from, date_to=filters.date_to, date_range=filters.date_range) }}">
+                        Next <i class="fas fa-chevron-right"></i>
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled">
+                    <span class="page-link">Next <i class="fas fa-chevron-right"></i></span>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+        
         {% else %}
         <p class="text-muted">No leads found.</p>
         {% endif %}
