@@ -8,6 +8,7 @@ All uploads are forced to Cloudinary; there is no local or Replit fallback.
 
 import os
 from io import BytesIO
+import traceback
 from typing import Dict
 
 # Always default to Cloudinary-only mode. Allow overriding with STORAGE_BACKEND env var,
@@ -60,6 +61,12 @@ def upload_file(file_data: bytes, filename: str, folder: str = 'uploads') -> Dic
         resource_type = 'image' if ext in image_exts else 'raw'
         public_id = f"{folder}/{filename}"
         file_obj = BytesIO(file_data)
+        # Ensure the buffer is at start
+        try:
+            file_obj.seek(0)
+        except Exception:
+            pass
+
         result = cloudinary.uploader.upload(
             file_obj,
             public_id=public_id,
@@ -69,10 +76,14 @@ def upload_file(file_data: bytes, filename: str, folder: str = 'uploads') -> Dic
         url = result.get('secure_url') or result.get('url')
         print(f"[STORAGE] Uploaded to Cloudinary: {public_id} -> {url}")
         return {'url': url, 'public_id': public_id, 'resource_type': resource_type}
+    except RecursionError as re:
+        tb = traceback.format_exc()
+        print(f"[STORAGE] Cloudinary upload failed with RecursionError: {re}\n{tb}")
+        return {'error': 'RecursionError during Cloudinary upload', 'trace': tb}
     except Exception as e:
-        err = str(e)
-        print(f"[STORAGE] Cloudinary upload failed: {err}")
-        return {'error': err}
+        tb = traceback.format_exc()
+        print(f"[STORAGE] Cloudinary upload failed: {e}\n{tb}")
+        return {'error': str(e), 'trace': tb}
 
 
 def download_file(filename: str, folder: str = 'uploads') -> bytes | None:
