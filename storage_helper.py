@@ -1,9 +1,18 @@
 """storage_helper
-Cloudinary-only storage helper.
+Supports multiple storage backends: Cloudinary and Supabase Storage.
 
-This module expects Cloudinary credentials to be provided via environment variables.
-It strips surrounding quotes from env values to avoid common render/GitHub UI mistakes.
-All uploads are forced to Cloudinary; there is no local or Replit fallback.
+Provide environment variables to select backend:
+- `STORAGE_BACKEND` = 'cloudinary' (default) or 'supabase'
+
+Cloudinary env vars:
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+
+Supabase env vars:
+- `SUPABASE_URL`, `SUPABASE_KEY` (service role key recommended), `SUPABASE_BUCKET` (optional)
+
+This module attempts to use the configured backend and exposes `upload_file`,
+`download_file`, `delete_file`, and `file_exists` helpers. It also provides
+`get_storage_debug()` for runtime information.
 """
 
 import os
@@ -13,21 +22,29 @@ from typing import Dict
 import subprocess
 import time
 import hashlib
+import requests
 
-# Always default to Cloudinary-only mode. Allow overriding with STORAGE_BACKEND env var,
-# but strip surrounding quotes if present.
+
 def _strip_quotes(val: str | None) -> str | None:
     if val is None:
         return None
     return val.strip().strip('"').strip("'")
 
-STORAGE_BACKEND = _strip_quotes(os.environ.get('STORAGE_BACKEND', 'cloudinary'))
-IS_CLOUDINARY = False
 
-# Expose config values at module scope for fallback upload.
+STORAGE_BACKEND = _strip_quotes(os.environ.get('STORAGE_BACKEND', 'cloudinary'))
+
+# Cloudinary flags/values
+IS_CLOUDINARY = False
 cloud_name: str | None = None
 api_key: str | None = None
 api_secret: str | None = None
+
+# Supabase flags/values
+IS_SUPABASE = False
+SUPABASE_URL: str | None = None
+SUPABASE_KEY: str | None = None
+SUPABASE_BUCKET: str = _strip_quotes(os.environ.get('SUPABASE_BUCKET', 'uploads'))
+
 
 if STORAGE_BACKEND == 'cloudinary':
     try:
@@ -38,7 +55,6 @@ if STORAGE_BACKEND == 'cloudinary':
         cloud_name = _strip_quotes(os.environ.get('CLOUDINARY_CLOUD_NAME'))
         api_key = _strip_quotes(os.environ.get('CLOUDINARY_API_KEY'))
         api_secret = _strip_quotes(os.environ.get('CLOUDINARY_API_SECRET'))
-        # store in module-scope variables for fallback usage
         globals()['cloud_name'] = cloud_name
         globals()['api_key'] = api_key
         globals()['api_secret'] = api_secret
@@ -49,7 +65,6 @@ if STORAGE_BACKEND == 'cloudinary':
             secure=True,
         )
         IS_CLOUDINARY = True
-        # Log Cloudinary client version to help debug SDK-specific issues
         try:
             cv = getattr(cloudinary, '__version__', None) or getattr(cloudinary, 'version', None)
         except Exception:
@@ -60,34 +75,99 @@ if STORAGE_BACKEND == 'cloudinary':
     except Exception as e:
         print(f"[STORAGE] WARNING: Failed to initialize Cloudinary: {e}")
         IS_CLOUDINARY = False
+
+elif STORAGE_BACKEND == 'supabase':
+    try:
+        SUPABASE_URL = _strip_quotes(os.environ.get('SUPABASE_URL'))
+        SUPABASE_KEY = _strip_quotes(os.environ.get('SUPABASE_KEY'))
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise RuntimeError('SUPABASE_URL and SUPABASE_KEY must be set for supabase backend')
+        IS_SUPABASE = True
+        print(f"[STORAGE] Supabase backend configured: {SUPABASE_URL} (bucket={SUPABASE_BUCKET})")
+    except Exception as e:
+        print(f"[STORAGE] WARNING: Failed to initialize Supabase backend: {e}")
+        IS_SUPABASE = False
+
 else:
-    print(f"[STORAGE] STORAGE_BACKEND='{STORAGE_BACKEND}' is not supported; only 'cloudinary' is allowed.")
+    print(f"[STORAGE] STORAGE_BACKEND='{STORAGE_BACKEND}' is not supported; use 'cloudinary' or 'supabase'.")
+
+
+def get_mime_type(filename: str) -> str:
+    ext = filename.lower().split('.')[-1] if '.' in filename else ''
+    mime_types = {
+        'pdf': 'application/pdf',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'webp': 'image/webp',
+        'bmp': 'image/bmp',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'txt': 'text/plain',
+        'csv': 'text/csv',
+    }
+    return mime_types.get(ext, 'application/octet-stream')
 
 
 def upload_file(file_data: bytes, filename: str, folder: str = 'uploads') -> Dict | None:
-    """Upload bytes to Cloudinary and return a dict on success, or {'error':msg} on failure.
+    """Dispatch upload to the configured backend and return a uniform dict on success.
 
-    This function does not save to local storage.
+    Returns: {'url','public_id','resource_type'} or {'error','trace'}
     """
-    if not IS_CLOUDINARY:
-        err = 'Cloudinary is not configured in this environment.'
-        print(f"[STORAGE] {err}")
-        return {'error': err}
+    if STORAGE_BACKEND == 'supabase':
+        return _supabase_upload(file_data, filename, folder)
 
+    # Default to Cloudinary
+    return _cloudinary_upload(file_data, filename, folder)
+
+
+def _supabase_upload(file_data: bytes, filename: str, folder: str = 'uploads') -> Dict:
+    if not IS_SUPABASE:
+        return {'error': 'supabase_not_configured'}
+    try:
+        path = f"{folder}/{filename}"
+        url = f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/{SUPABASE_BUCKET}"
+        headers = {
+            'Authorization': f'Bearer {SUPABASE_KEY}',
+            'apikey': SUPABASE_KEY,
+        }
+        files = {
+            'file': (filename, file_data, get_mime_type(filename))
+        }
+        data = {'path': path}
+        resp = requests.post(url, headers=headers, files=files, data=data, timeout=30)
+        if resp.status_code not in (200, 201):
+            return {'error': 'supabase_upload_failed', 'status': resp.status_code, 'body': resp.text}
+        public_url = f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/public/{SUPABASE_BUCKET}/{path}"
+        print(f"[STORAGE] Uploaded to Supabase: {path} -> {public_url}")
+        ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
+        resource_type = 'image' if ext in {'png','jpg','jpeg','gif','webp','bmp'} else 'raw'
+        return {'url': public_url, 'public_id': path, 'resource_type': resource_type}
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[STORAGE] Supabase upload failed: {e}\n{tb}")
+        return {'error': str(e), 'trace': tb}
+
+
+def _cloudinary_upload(file_data: bytes, filename: str, folder: str = 'uploads') -> Dict:
+    if not IS_CLOUDINARY:
+        return {'error': 'cloudinary_not_configured'}
     try:
         ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
         image_exts = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'}
         resource_type = 'image' if ext in image_exts else 'raw'
         public_id = f"{folder}/{filename}"
         file_obj = BytesIO(file_data)
-        # Ensure the buffer is at start
         try:
             file_obj.seek(0)
         except Exception:
             pass
 
-        # Primary attempt: pass file-like object
         try:
+            import cloudinary.uploader
             result = cloudinary.uploader.upload(
                 file_obj,
                 public_id=public_id,
@@ -95,8 +175,6 @@ def upload_file(file_data: bytes, filename: str, folder: str = 'uploads') -> Dic
                 overwrite=False,
             )
         except RecursionError:
-            # Some environments/SDK versions raise RecursionError on file-like objects.
-            # Retry by passing raw bytes instead as a fallback.
             try:
                 print('[STORAGE] RecursionError detected on file-like upload — retrying with raw bytes')
                 result = cloudinary.uploader.upload(
@@ -108,7 +186,6 @@ def upload_file(file_data: bytes, filename: str, folder: str = 'uploads') -> Dic
             except Exception as e2:
                 tb = traceback.format_exc()
                 print(f"[STORAGE] Cloudinary upload retry failed: {e2}\n{tb}")
-                # As a last-resort fallback, try uploading with a system `curl` subprocess
                 try:
                     print('[STORAGE] Attempting curl-based fallback upload to avoid urllib3 recursion')
                     curl_res = _curl_upload(file_obj.getvalue(), public_id, resource_type)
@@ -131,24 +208,15 @@ def upload_file(file_data: bytes, filename: str, folder: str = 'uploads') -> Dic
 
 
 def _curl_upload(file_bytes: bytes, public_id: str, resource_type: str) -> Dict:
-    """Fallback upload using system `curl` to POST directly to Cloudinary REST API.
-
-    This circumvents Python's urllib3/request/requests stack, useful when that
-    stack triggers RecursionError in the runtime environment.
-    """
     if not cloud_name or not api_key or not api_secret:
         return {'error': 'missing_cloudinary_credentials_for_curl_fallback'}
-
-    # Build signed params: timestamp + public_id
     timestamp = str(int(time.time()))
     params_to_sign = {'public_id': public_id, 'timestamp': timestamp}
-    # Create the string to sign (sorted keys)
     pieces = []
     for k in sorted(params_to_sign.keys()):
         pieces.append(f"{k}={params_to_sign[k]}")
     to_sign = '&'.join(pieces) + api_secret
     signature = hashlib.sha1(to_sign.encode('utf-8')).hexdigest()
-
     upload_url = f"https://api.cloudinary.com/v1_1/{cloud_name}/{resource_type}/upload"
     cmd = [
         'curl', '-sS', '-X', 'POST', upload_url,
@@ -158,11 +226,9 @@ def _curl_upload(file_bytes: bytes, public_id: str, resource_type: str) -> Dict:
         '-F', f"timestamp={timestamp}",
         '-F', f"signature={signature}"
     ]
-
     proc = subprocess.run(cmd, input=file_bytes, capture_output=True)
     if proc.returncode != 0:
         return {'error': 'curl_failed', 'stdout': proc.stdout.decode('utf-8', 'ignore'), 'stderr': proc.stderr.decode('utf-8', 'ignore')}
-
     try:
         import json
         res = json.loads(proc.stdout.decode('utf-8', 'ignore'))
@@ -175,25 +241,146 @@ def _curl_upload(file_bytes: bytes, public_id: str, resource_type: str) -> Dict:
         return {'error': 'invalid_json_from_curl', 'raw': proc.stdout.decode('utf-8', 'ignore'), 'exc': str(e)}
 
 
+def download_file(filename: str, folder: str = 'uploads') -> bytes | None:
+    if STORAGE_BACKEND == 'supabase' and IS_SUPABASE:
+        # Supabase: we return None and expect callers to use the public URL
+        return None
+    if STORAGE_BACKEND == 'cloudinary' and IS_CLOUDINARY:
+        return None
+    print("[STORAGE] download_file: storage backend not configured; cannot download.")
+    return None
+
+
+def file_exists(filename_or_obj: str | dict, folder: str = 'uploads') -> bool:
+    if STORAGE_BACKEND == 'supabase' and IS_SUPABASE:
+        if isinstance(filename_or_obj, dict):
+            pid = filename_or_obj.get('public_id')
+        else:
+            pid = filename_or_obj
+        if pid and pid.startswith('http'):
+            # Check public URL
+            try:
+                r = requests.head(pid, timeout=10)
+                return r.status_code == 200
+            except Exception:
+                return False
+        # Assume public path
+        url = f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/public/{SUPABASE_BUCKET}/{pid}"
+        try:
+            r = requests.head(url, timeout=10)
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    # Cloudinary path
+    if STORAGE_BACKEND == 'cloudinary' and IS_CLOUDINARY:
+        try:
+            if isinstance(filename_or_obj, dict):
+                public_id = filename_or_obj.get('public_id')
+                resource_type = filename_or_obj.get('resource_type', 'raw')
+            elif isinstance(filename_or_obj, str) and filename_or_obj.startswith('http'):
+                public_id, resource_type, _ = _cloudinary_parse_url(filename_or_obj)
+            else:
+                public_id = filename_or_obj
+                resource_type = 'raw'
+            cloudinary.api.resource(public_id, resource_type=resource_type)
+            return True
+        except Exception:
+            return False
+    return False
+
+
+def delete_file(filename_or_obj: str | dict, folder: str = 'uploads') -> bool:
+    if STORAGE_BACKEND == 'supabase' and IS_SUPABASE:
+        if isinstance(filename_or_obj, dict):
+            path = filename_or_obj.get('public_id')
+        else:
+            path = filename_or_obj
+        if path.startswith('http'):
+            # try to extract path after /public/{bucket}/
+            try:
+                parts = path.split('/storage/v1/object/public/')
+                if len(parts) == 2:
+                    bucket_and_path = parts[1]
+                    # bucket_and_path = "{bucket}/{path}"
+                    if '/' in bucket_and_path:
+                        _, obj_path = bucket_and_path.split('/', 1)
+                        path = obj_path
+            except Exception:
+                pass
+        url = f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/{SUPABASE_BUCKET}/{path}"
+        headers = {'Authorization': f'Bearer {SUPABASE_KEY}', 'apikey': SUPABASE_KEY}
+        try:
+            r = requests.delete(url, headers=headers, timeout=10)
+            return r.status_code in (200, 204)
+        except Exception as e:
+            print(f"[STORAGE] Supabase delete failed: {e}")
+            return False
+
+    if STORAGE_BACKEND == 'cloudinary' and IS_CLOUDINARY:
+        try:
+            if isinstance(filename_or_obj, dict):
+                public_id = filename_or_obj.get('public_id')
+                resource_type = filename_or_obj.get('resource_type', 'raw')
+            elif isinstance(filename_or_obj, str) and filename_or_obj.startswith('http'):
+                public_id, resource_type, _ = _cloudinary_parse_url(filename_or_obj)
+            else:
+                public_id = filename_or_obj
+                resource_type = 'raw'
+            cloudinary.uploader.destroy(public_id, resource_type=resource_type)
+            print(f"[STORAGE] Deleted from Cloudinary: {public_id} ({resource_type})")
+            return True
+        except Exception as e:
+            print(f"[STORAGE] Cloudinary delete failed: {e}")
+            return False
+
+    print("[STORAGE] delete_file: unsupported input or storage not configured")
+    return False
+
+
+def _cloudinary_parse_url(url: str) -> tuple[str, str, str | None]:
+    try:
+        parts = url.split('/upload/')
+        if len(parts) < 2:
+            return (url, 'raw', None)
+        before = parts[0]
+        rt = before.rstrip('/').split('/')[-1]
+        after = parts[1]
+        if after.startswith('v') and '/' in after:
+            after = after.split('/', 1)[1]
+        ext = None
+        public_id_no_ext = after
+        if '.' in after:
+            ext = after.rsplit('.', 1)[1].lower()
+            public_id_no_ext = after.rsplit('.', 1)[0]
+        return (public_id_no_ext, rt, ext)
+    except Exception:
+        return (url, 'raw', None)
+
+
 def get_storage_debug() -> Dict:
-    """Return a small dict with storage runtime/debug info for `/__storage_debug` route."""
     try:
         cv = None
         try:
-            import cloudinary
-            cv = getattr(cloudinary, '__version__', None) or getattr(cloudinary, 'version', None)
+            if IS_CLOUDINARY:
+                import cloudinary
+                cv = getattr(cloudinary, '__version__', None) or getattr(cloudinary, 'version', None)
         except Exception:
             cv = None
         import sys
         return {
             'IS_CLOUDINARY': IS_CLOUDINARY,
+            'IS_SUPABASE': IS_SUPABASE,
             'STORAGE_BACKEND': STORAGE_BACKEND,
             'cloud_name': cloud_name,
             'cloudinary_version': cv,
+            'supabase_url': SUPABASE_URL,
+            'supabase_bucket': SUPABASE_BUCKET,
             'python_version': sys.version.splitlines()[0]
         }
     except Exception as e:
         return {'error': str(e)}
+
 """storage_helper
 Cloudinary-only storage helper.
 

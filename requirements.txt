@@ -19,3 +19,5 @@ Flask-Caching
 Flask-Compress
 Flask-DebugToolbar
 Flask-HTMLmin
+
+requests>=2.28.0
