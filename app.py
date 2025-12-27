@@ -26,7 +26,7 @@ from forms import (LoginForm, LeadForm, RejectForm, ResubmitForm, ServiceForm, U
                    SocialProfileForm, ActivityForm, DealAmountForm, PipelineStageForm)
 from constants import (ROLE_ADMIN, ROLE_MANAGER, ROLE_MARKETER, ROLE_BD_SALES, 
                        ROLE_LABELS, ROLE_BADGE_COLORS)
-from storage_helper import upload_file, download_file, get_mime_type, IS_CLOUDINARY, STORAGE_BACKEND
+from storage_helper import upload_file, download_file, get_mime_type, IS_CLOUDINARY, STORAGE_BACKEND, get_storage_debug
 
 # Import PostgreSQL error types if using PostgreSQL
 if USE_POSTGRES:
@@ -214,6 +214,15 @@ def format_indian_datetime(dt_string, format_type='full'):
             return dt_indian.strftime('%d %B, %Y, %A, %I:%M %p')
     except:
         return dt_string
+
+
+@app.route('/__storage_debug')
+def storage_debug():
+    try:
+        info = get_storage_debug()
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def build_unified_timeline(lead_id, lead, cursor):
     """Build a unified activity timeline from all sources"""
