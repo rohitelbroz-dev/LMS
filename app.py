@@ -26,7 +26,7 @@ from forms import (LoginForm, LeadForm, RejectForm, ResubmitForm, ServiceForm, U
                    SocialProfileForm, ActivityForm, DealAmountForm, PipelineStageForm)
 from constants import (ROLE_ADMIN, ROLE_MANAGER, ROLE_MARKETER, ROLE_BD_SALES, 
                        ROLE_LABELS, ROLE_BADGE_COLORS)
-from storage_helper import upload_file, download_file, get_mime_type
+from storage_helper import upload_file, download_file, get_mime_type, IS_CLOUDINARY, STORAGE_BACKEND
 
 # Import PostgreSQL error types if using PostgreSQL
 if USE_POSTGRES:
@@ -1360,7 +1360,18 @@ def new_lead():
             filename = f"{timestamp}_{filename}"
             file_data = file.read()
             upload_result = upload_file(file_data, filename, 'uploads')
-            # upload_result may be dict (cloud) or string (local)
+            # upload_result may be dict (cloud), string (local), or dict({'error':...}) on failure
+            if isinstance(upload_result, dict) and upload_result.get('error'):
+                # If Cloudinary is initialized, require successful cloud upload; otherwise show error
+                if IS_CLOUDINARY:
+                    flash(f"File upload failed: {upload_result.get('error')}", 'danger')
+                    conn.close()
+                    return redirect(request.url)
+                else:
+                    # Cloudinary not initialized — treat as error (forced cloud uploads)
+                    flash(f"File upload failed: {upload_result.get('error')}", 'danger')
+                    conn.close()
+                    return redirect(request.url)
             if isinstance(upload_result, dict):
                 attachment_path = upload_result.get('url')
             else:
@@ -3025,6 +3036,17 @@ def edit_lead(lead_id):
             filename = f"{timestamp}_{filename}"
             file_data = file.read()
             upload_result = upload_file(file_data, filename, 'uploads')
+            # If upload returned an error, block the edit when using Cloudinary
+            if isinstance(upload_result, dict) and upload_result.get('error'):
+                if IS_CLOUDINARY:
+                    flash(f"File upload failed: {upload_result.get('error')}", 'danger')
+                    conn.close()
+                    return redirect(request.url)
+                else:
+                    flash(f"File upload failed: {upload_result.get('error')}", 'danger')
+                    conn.close()
+                    return redirect(request.url)
+
             # Normalize stored value to a URL or local filename
             if isinstance(upload_result, dict):
                 new_attachment_value = upload_result.get('url')

@@ -50,8 +50,9 @@ def upload_file(file_data: bytes, filename: str, folder: str = 'uploads') -> dic
     """
     storage_path = f"{folder}/{filename}"
 
-    # CLOUDINARY
-    if STORAGE_BACKEND == 'cloudinary' and IS_CLOUDINARY:
+    # Force Cloudinary: if Cloudinary is initialized (IS_CLOUDINARY True) always upload there.
+    # Do NOT fall back to local filesystem — return an explicit error when Cloudinary is not configured.
+    if IS_CLOUDINARY:
         try:
             # Determine resource type (image vs raw)
             ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
@@ -71,12 +72,14 @@ def upload_file(file_data: bytes, filename: str, folder: str = 'uploads') -> dic
             print(f"[STORAGE] Uploaded to Cloudinary: {public_id} -> {url}")
             return {'url': url, 'public_id': public_id, 'resource_type': resource_type}
         except Exception as e:
-            print(f"[STORAGE] Cloudinary upload failed: {e}")
-            return None
+            err = str(e)
+            print(f"[STORAGE] Cloudinary upload failed: {err}")
+            return {'error': err}
 
-    # Local filesystem (default)
-    success = _save_local(file_data, filename, folder)
-    return f"{folder}/{filename}" if success else None
+    # Cloudinary not configured — in forced mode we reject the upload and return an explicit error.
+    err = 'Cloudinary is not configured on this environment; uploads are required to go to Cloudinary.'
+    print(f"[STORAGE] {err}")
+    return {'error': err}
 
 
 def download_file(filename: str, folder: str = 'uploads') -> bytes | None:
