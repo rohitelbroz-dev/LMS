@@ -174,7 +174,7 @@
                     
                     <div class="mb-3">
                         {{ form.attachment.label(class="form-label") }}
-                        {{ form.attachment(class="form-control" + (" is-invalid" if form.attachment.errors else "")) }}
+                        {{ form.attachment(class="form-control" + (" is-invalid" if form.attachment.errors else ""), **{"data-cloudinary": "true"}) }}
                         <div class="form-text">Upload new attachment or leave blank to keep existing</div>
                         {% if form.attachment.errors %}
                             <div class="invalid-feedback">{{ form.attachment.errors[0] }}</div>
@@ -312,6 +312,8 @@
                         </a>
                     </div>
                 </form>
+                
+                <script src="{{ url_for('static', filename='js/cloudinary-upload.js') }}"></script>
             </div>
         </div>
     </div>

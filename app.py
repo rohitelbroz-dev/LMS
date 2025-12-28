@@ -1328,6 +1328,28 @@ def delete_stage(stage_id):
     flash('Pipeline stage deleted successfully!', 'success')
     return redirect(url_for('manage_stages'))
 
+@app.route('/api/cloudinary-config', methods=['GET'])
+@login_required
+def get_cloudinary_config():
+    """Return Cloudinary configuration for frontend direct uploads.
+    
+    Frontend uses this to upload directly to Cloudinary's REST API,
+    avoiding Python/urllib3 SSL issues on Render.
+    """
+    import os
+    cloud_name = os.environ.get('CLOUDINARY_CLOUD_NAME', '')
+    upload_preset = os.environ.get('CLOUDINARY_UPLOAD_PRESET', '')
+    
+    if not cloud_name or not upload_preset:
+        return jsonify({'error': 'Cloudinary not configured'}), 400
+    
+    return jsonify({
+        'cloud_name': cloud_name,
+        'upload_preset': upload_preset,
+        'api_url': f'https://api.cloudinary.com/v1_1/{cloud_name}/auto/upload'
+    })
+
+
 @app.route('/api/pipeline/stages/reorder', methods=['POST'])
 @login_required
 @role_required('admin')
@@ -1370,7 +1392,14 @@ def new_lead():
     
     if form.validate_on_submit():
         attachment_path = None
-        if form.attachment.data:
+        
+        # First, check if frontend uploaded directly to Cloudinary
+        cloudinary_url = request.form.get('attachment_url')
+        if cloudinary_url:
+            attachment_path = cloudinary_url
+            print(f"[STORAGE] Using frontend-uploaded Cloudinary URL: {cloudinary_url}")
+        # Fallback: if file was submitted and no Cloudinary URL, upload via Python
+        elif form.attachment.data:
             file = form.attachment.data
             filename = secure_filename(file.filename)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -3046,7 +3075,14 @@ def edit_lead(lead_id):
             changes.append(('services', old_services, new_services))
         
         attachment_path = lead['attachment_path']
-        if form.attachment.data:
+        
+        # Check if frontend uploaded directly to Cloudinary
+        cloudinary_url = request.form.get('attachment_url')
+        if cloudinary_url:
+            attachment_path = cloudinary_url
+            print(f"[STORAGE] Using frontend-uploaded Cloudinary URL: {cloudinary_url}")
+        # Fallback: if file was submitted and no Cloudinary URL, upload via Python
+        elif form.attachment.data:
             file = form.attachment.data
             filename = secure_filename(file.filename)
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
