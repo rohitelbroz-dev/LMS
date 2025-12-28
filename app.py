@@ -2888,8 +2888,18 @@ def edit_profile():
             current_user.email = form.email.data
             
             # Handle avatar upload
-            avatar_filename = None
-            if form.avatar.data:
+            avatar_to_save = None
+            
+            # First check if frontend uploaded directly to Cloudinary
+            cloudinary_avatar_url = request.form.get('avatar_url')
+            if cloudinary_avatar_url:
+                avatar_to_save = cloudinary_avatar_url
+                # Delete old avatar if exists
+                UserProfile.delete_avatar(current_user.id)
+                print(f"[PROFILE] Using frontend-uploaded Cloudinary avatar: {cloudinary_avatar_url}")
+            
+            # Fallback: if file was submitted and no Cloudinary URL, upload via Python
+            elif form.avatar.data:
                 avatar_file = form.avatar.data
                 ext = avatar_file.filename.rsplit('.', 1)[1].lower()
                 avatar_filename = f"{current_user.id}_{uuid4().hex[:8]}.{ext}"
@@ -2900,7 +2910,16 @@ def edit_profile():
                 # Save new avatar using storage helper
                 file_data = avatar_file.read()
                 upload_result = upload_file(file_data, avatar_filename, 'uploads/profile')
-                avatar_to_save = upload_result['url'] if isinstance(upload_result, dict) else (upload_result if upload_result else avatar_filename)
+                
+                # Check if upload succeeded
+                if isinstance(upload_result, dict):
+                    if upload_result.get('error'):
+                        flash(f"Avatar upload failed: {upload_result.get('error')}", 'danger')
+                        conn.close()
+                        return render_template('profile_edit.html', form=form, profile=profile)
+                    avatar_to_save = upload_result.get('url')
+                else:
+                    avatar_to_save = upload_result if upload_result else None
             
             # Update profile (avatar and/or bio)
             if avatar_to_save or form.bio.data is not None:

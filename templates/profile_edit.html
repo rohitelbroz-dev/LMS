@@ -27,7 +27,7 @@
                             </div>
                             <div class="mb-3">
                                 {{ form.avatar.label(class="form-label") }}
-                                {{ form.avatar(class="form-control form-control-sm" + (" is-invalid" if form.avatar.errors else "")) }}
+                                {{ form.avatar(class="form-control form-control-sm" + (" is-invalid" if form.avatar.errors else ""), **{"data-cloudinary": "true"}) }}
                                 <div class="form-text">JPG, PNG, GIF (Max 16MB)</div>
                                 {% if form.avatar.errors %}
                                     <div class="invalid-feedback">{{ form.avatar.errors[0] }}</div>
@@ -96,4 +96,6 @@
         </div>
     </div>
 </div>
+
+<script src="{{ url_for('static', filename='js/cloudinary-upload.js') }}"></script>
 {% endblock %}
