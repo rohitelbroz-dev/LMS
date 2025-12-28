@@ -57,6 +57,14 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['CACHE_TYPE'] = 'SimpleCache'  # Use SimpleCache for free tier, or Redis if available
 app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
 
+# Fix URL generation behind proxy (GitHub Codespaces, Render, etc.)
+app.config['PREFERRED_URL_SCHEME'] = 'https'
+app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
+
+# Import werkzeug for trusted hosts configuration
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+
 cache = Cache(app)
 
 compress = Compress(app)
