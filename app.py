@@ -2198,9 +2198,10 @@ def assign_bd_sales(lead_id):
         # Commit with retry
         try:
             safe_commit(conn)
-        except sqlite3.OperationalError:
+        except Exception as e:
             conn.close()
-            flash(f'Database is busy. Please try again.', 'warning')
+            app.logger.error(f"Error during BD sales assignment: {str(e)}")
+            flash(f'Error assigning lead: {str(e)}', 'danger')
             return redirect(url_for('assign_bd_sales', lead_id=lead_id))
         
         conn.close()
