@@ -489,7 +489,7 @@ def peek_next_bd_sales_for_assignment():
     bd_sales = cursor.fetchall()
     
     if not bd_sales:
-        conn.close()
+        # Don't close - connection is managed by Flask request context
         return None
     
     bd_ids = [b['id'] for b in bd_sales]
@@ -514,7 +514,7 @@ def peek_next_bd_sales_for_assignment():
     else:
         next_bd_id = bd_ids[0]
     
-    conn.close()
+    # Don't close - connection is managed by Flask request context
     return next_bd_id
 
 def commit_bd_sales_assignment(bd_sales_id):
