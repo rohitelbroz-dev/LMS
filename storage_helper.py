@@ -25,6 +25,8 @@ from typing import Dict
 import time
 import hashlib
 import requests
+import ssl
+import certifi
 
 
 def _strip_quotes(val: str | None) -> str | None:
@@ -179,8 +181,14 @@ def _cloudinary_upload(file_data: bytes, filename: str, folder: str = 'uploads')
         
         print(f"[STORAGE] Uploading to Cloudinary via REST API: {public_id}")
         
-        # Make the request
-        response = requests.post(upload_url, files=files, data=data, timeout=30)
+        # Make the request with proper SSL/certificate handling
+        response = requests.post(
+            upload_url, 
+            files=files, 
+            data=data, 
+            timeout=30,
+            verify=certifi.where()  # Use certifi's certificate bundle for SSL verification
+        )
         
         if response.status_code not in (200, 201):
             error_msg = f"HTTP {response.status_code}"
