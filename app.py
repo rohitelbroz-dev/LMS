@@ -63,7 +63,9 @@ app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
 
 # Import werkzeug for trusted hosts configuration
 from werkzeug.middleware.proxy_fix import ProxyFix
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+# Note: x_port=0 because Codespaces/Render handle port mapping automatically
+# Setting x_port=1 causes port duplication in generated URLs
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=0, x_prefix=1)
 
 cache = Cache(app)
 
