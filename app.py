@@ -3482,6 +3482,7 @@ def new_target():
 @login_required
 @role_required('admin', 'manager')
 def edit_target(target_id):
+    flash("Executing updated edit_target function.", "info")
     conn = get_db()
     cursor = conn.cursor()
     
@@ -3501,7 +3502,12 @@ def edit_target(target_id):
     form = TargetForm(obj=target)
     
     cursor.execute('SELECT role FROM users WHERE id = %s', (target['assignee_id'],))
-    assignee_role = cursor.fetchone()['role']
+    assignee_user = cursor.fetchone()
+    if not assignee_user:
+        flash(f"Assignee user with ID {target['assignee_id']} not found. Cannot edit target.", 'danger')
+        conn.close()
+        return redirect(url_for('manage_targets'))
+    assignee_role = assignee_user['role']
     
     if current_user.role == 'admin':
         cursor.execute('SELECT id, name FROM users WHERE role = %s ORDER BY name', ('manager',))
@@ -3530,12 +3536,17 @@ def edit_target(target_id):
             flash('Target updated successfully!', 'success')
             return redirect(url_for('manage_targets'))
     else:
-        form.assignee.data = target['assignee_id']
-        form.target_count.data = target['target_count']
-        form.period_start.data = datetime.strptime(target['period_start'], '%Y-%m-%d').date()
-        form.period_end.data = datetime.strptime(target['period_end'], '%Y-%m-%d').date()
-        form.target_type.data = target['target_type']
-    
+        try:
+            form.assignee.data = target['assignee_id']
+            form.target_count.data = target['target_count']
+            form.period_start.data = datetime.strptime(target['period_start'], '%Y-%m-%d').date()
+            form.period_end.data = datetime.strptime(target['period_end'], '%Y-%m-%d').date()
+            form.target_type.data = target['target_type']
+        except (ValueError, TypeError) as e:
+            conn.close()
+            flash(f"Error loading target data: Invalid date format in database. Please check target with ID {target_id}.", "danger")
+            return redirect(url_for('manage_targets'))
+
     conn.close()
     return render_template('target_form.html', form=form, title='Edit Target', target_id=target_id)
 
