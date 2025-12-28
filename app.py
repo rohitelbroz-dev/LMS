@@ -8,7 +8,7 @@ from io import StringIO, BytesIO
 from datetime import datetime, timedelta, date
 from typing import cast
 import pytz
-from flask import Flask, render_template, redirect, url_for, flash, request, send_file, make_response, send_from_directory, session, jsonify
+from flask import Flask, render_template, redirect, url_for, flash, request, send_file, make_response, send_from_directory, session, jsonify, abort
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_socketio import SocketIO, emit, join_room
 from flask_caching import Cache
@@ -556,7 +556,7 @@ def compute_target_progress(target, cursor=None):
         cursor = conn.cursor()
         own_connection = True
     
-    cursor.execute('SELECT role FROM users WHERE id = %s', (target['assignee_id'],))
+    execute_query(cursor, 'SELECT role FROM users WHERE id = %s', (target['assignee_id'],))
     assignee = cursor.fetchone()
     
     if not assignee:
@@ -565,7 +565,7 @@ def compute_target_progress(target, cursor=None):
         return {'actual': 0, 'target': target['target_count'], 'percent': 0}
     
     if assignee['role'] == 'manager':
-        cursor.execute('''
+        execute_query(cursor, '''
             SELECT COUNT(DISTINCT la.lead_id) as count 
             FROM lead_assignments la
             JOIN leads l ON la.lead_id = l.id
@@ -575,7 +575,7 @@ def compute_target_progress(target, cursor=None):
             AND DATE(la.acted_at) BETWEEN %s AND %s
         ''', (target['assignee_id'], target['period_start'], target['period_end']))
     else:
-        cursor.execute('''
+        execute_query(cursor, '''
             SELECT COUNT(*) as count FROM leads 
             WHERE submitted_by_user_id = %s 
             AND status != 'Rejected'
@@ -594,10 +594,13 @@ def compute_target_progress(target, cursor=None):
         'percent': (actual_count / target['target_count'] * 100) if target['target_count'] > 0 else 0
     }
 
-def has_period_overlap(assignee_id, period_start, period_end, exclude_id=None):
+def has_period_overlap(assignee_id, period_start, period_end, exclude_id=None, cursor=None):
     """Check if target period overlaps with existing targets for same assignee"""
-    conn = get_db()
-    cursor = conn.cursor()
+    should_close = False
+    if cursor is None:
+        conn = get_db()
+        cursor = conn.cursor()
+        should_close = True
     
     query = '''
         SELECT id FROM lead_targets 
@@ -613,9 +616,11 @@ def has_period_overlap(assignee_id, period_start, period_end, exclude_id=None):
         query += ' AND id != %s'
         params.append(exclude_id)
     
-    cursor.execute(query, params)
+    execute_query(cursor, query, params)
     result = cursor.fetchone()
-    conn.close()
+    
+    if should_close:
+        conn.close()
     
     return result is not None
 
@@ -681,34 +686,42 @@ def check_and_reassign_overdue_leads():
                 #              (assignment_id,))
                 
                 next_deadline_hours = 4 if is_initial else 4
-                cursor.execute('''
-                    INSERT INTO lead_assignments (lead_id, manager_id, deadline_at, is_initial_assignment)
-                    VALUES (%s, %s, NOW() + INTERVAL '%s hours', 0)
-                    RETURNING id
-                ''', (lead_id, new_manager_id, next_deadline_hours))
+                deadline_at = datetime.now() + timedelta(hours=next_deadline_hours)
                 
-                new_assignment_id = cursor.fetchone()['id']
+                if USE_POSTGRES:
+                    execute_query(cursor, '''
+                        INSERT INTO lead_assignments (lead_id, manager_id, deadline_at, is_initial_assignment)
+                        VALUES (%s, %s, %s, 0)
+                        RETURNING id
+                    ''', (lead_id, new_manager_id, deadline_at))
+                    new_assignment_id = cursor.fetchone()['id']
+                else:
+                    execute_query(cursor, '''
+                        INSERT INTO lead_assignments (lead_id, manager_id, deadline_at, is_initial_assignment)
+                        VALUES (%s, %s, %s, 0)
+                    ''', (lead_id, new_manager_id, deadline_at))
+                    new_assignment_id = cursor.lastrowid
                 
-                cursor.execute('''
+                execute_query(cursor, '''
                     INSERT INTO lead_assignment_history (assignment_id, lead_id, old_manager_id, 
                                                          new_manager_id, reassignment_reason)
                     VALUES (%s, %s, %s, %s, %s)
                 ''', (assignment_id, lead_id, old_manager_id, new_manager_id, 
                      'Automatic reassignment due to missed deadline'))
                 
-                cursor.execute('UPDATE leads SET current_manager_id = %s WHERE id = %s', 
+                execute_query(cursor, 'UPDATE leads SET current_manager_id = %s WHERE id = %s', 
                              (new_manager_id, lead_id))
                 
-                cursor.execute('SELECT name FROM users WHERE id = %s', (new_manager_id,))
+                execute_query(cursor, 'SELECT name FROM users WHERE id = %s', (new_manager_id,))
                 new_manager = cursor.fetchone()
                 
-                cursor.execute('''
+                execute_query(cursor, '''
                     INSERT INTO lead_notes (lead_id, author_user_id, note_type, message)
                     VALUES (%s, 1, 'system', %s)
                 ''', (lead_id, f'Lead auto-reassigned from {assignment["manager_name"]} to {new_manager["name"]} due to missed deadline'))
                 
                 notification_msg = f'Lead for {company} has been reassigned to you (previous manager missed deadline)'
-                cursor.execute('''
+                execute_query(cursor, '''
                     INSERT INTO notifications (user_id, lead_id, message, notification_type)
                     VALUES (%s, %s, %s, 'assignment')
                 ''', (new_manager_id, lead_id, notification_msg))
@@ -716,7 +729,7 @@ def check_and_reassign_overdue_leads():
                 send_realtime_notification(new_manager_id, notification_msg, 'assignment', play_sound=True)
                 
                 old_manager_msg = f'Lead for {company} was reassigned (deadline missed)'
-                cursor.execute('''
+                execute_query(cursor, '''
                     INSERT INTO notifications (user_id, lead_id, message, notification_type)
                     VALUES (%s, %s, %s, 'warning')
                 ''', (old_manager_id, lead_id, old_manager_msg))
@@ -760,7 +773,7 @@ def check_and_send_activity_reminders():
             print(f'Found {reminder_count} activity reminders due, processing...')
             
             # Find activities with reminders due (reminder_at is now or past) and not completed
-            cursor.execute('''
+            execute_query(cursor, '''
                 SELECT la.id, la.lead_id, la.actor_id, la.activity_type, la.title, 
                        la.description, la.reminder_at, la.due_at,
                        l.company, l.full_name as lead_name, u.name as user_name
@@ -768,7 +781,7 @@ def check_and_send_activity_reminders():
                 JOIN leads l ON la.lead_id = l.id
                 JOIN users u ON la.actor_id = u.id
                 WHERE la.reminder_at IS NOT NULL 
-                  AND la.reminder_at <= NOW()
+                  AND la.reminder_at <= CURRENT_TIMESTAMP
                   AND la.completed_at IS NULL
                 ORDER BY la.reminder_at ASC
                 LIMIT 20
@@ -791,7 +804,7 @@ def check_and_send_activity_reminders():
                     notification_msg = f'Reminder: {title} for {company} [Activity #{activity_id}]'
                 
                 # Check if we've already sent a reminder for this specific activity today
-                cursor.execute('''
+                execute_query(cursor, '''
                     SELECT id FROM notifications 
                     WHERE user_id = %s 
                       AND message LIKE %s
@@ -805,7 +818,7 @@ def check_and_send_activity_reminders():
                     continue
                 
                 # Insert notification to database
-                cursor.execute('''
+                execute_query(cursor, '''
                     INSERT INTO notifications (user_id, lead_id, message, notification_type)
                     VALUES (%s, %s, %s, 'info')
                 ''', (actor_id, lead_id, notification_msg))
@@ -1213,18 +1226,19 @@ def pipeline():
 @app.route('/pipeline/stages')
 @login_required
 @role_required('admin')
+@retry_on_db_lock()
 def manage_stages():
     """Pipeline Stage Management - Admin only"""
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM pipeline_stages ORDER BY position ASC')
+    execute_query(cursor, 'SELECT * FROM pipeline_stages ORDER BY position ASC')
     stages = cursor.fetchall()
     
     # Count leads in each stage
     stages_with_counts = []
     for stage in stages:
-        cursor.execute('SELECT COUNT(*) as count FROM leads WHERE current_stage_id = %s', (stage['id'],))
+        execute_query(cursor, 'SELECT COUNT(*) as count FROM leads WHERE current_stage_id = %s', (stage['id'],))
         count_row = cursor.fetchone()
         stages_with_counts.append({
             'stage': stage,
@@ -1238,42 +1252,45 @@ def manage_stages():
 @app.route('/pipeline/stages/new', methods=['GET', 'POST'])
 @login_required
 @role_required('admin')
+@retry_on_db_lock()
 def new_stage():
     """Create new pipeline stage"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
     form = PipelineStageForm()
     
     if form.validate_on_submit():
-        conn = get_db()
-        cursor = conn.cursor()
-        
         # Get the next position number
-        cursor.execute('SELECT MAX(position) as max_pos FROM pipeline_stages')
+        execute_query(cursor, 'SELECT MAX(position) as max_pos FROM pipeline_stages')
         max_pos_row = cursor.fetchone()
         next_position = (max_pos_row['max_pos'] or 0) + 1
         
         # Insert new stage
-        cursor.execute('''
-            INSERT INTO pipeline_stages (name, color, description, position)
-            VALUES (%s, %s, %s, %s)
-        ''', (form.name.data, form.color.data or '#6c757d', form.description.data, next_position))
+        execute_query(cursor, '''
+            INSERT INTO pipeline_stages (name, color, description, position, created_by_id)
+            VALUES (%s, %s, %s, %s, %s)
+        ''', (form.name.data, form.color.data or '#6c757d', form.description.data, next_position, current_user.id))
         
-        conn.commit()
+        safe_commit(conn, context="new_stage")
         conn.close()
         
         flash(f'Pipeline stage "{form.name.data}" created successfully!', 'success')
         return redirect(url_for('manage_stages'))
     
+    conn.close()
     return render_template('stage_form.html', form=form, title='New Pipeline Stage')
 
 @app.route('/pipeline/stages/<int:stage_id>/edit', methods=['GET', 'POST'])
 @login_required
 @role_required('admin')
+@retry_on_db_lock()
 def edit_stage(stage_id):
     """Edit existing pipeline stage"""
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM pipeline_stages WHERE id = %s', (stage_id,))
+    execute_query(cursor, 'SELECT * FROM pipeline_stages WHERE id = %s', (stage_id,))
     stage = cursor.fetchone()
     
     if not stage:
@@ -1284,13 +1301,13 @@ def edit_stage(stage_id):
     form = PipelineStageForm()
     
     if form.validate_on_submit():
-        cursor.execute('''
+        execute_query(cursor, '''
             UPDATE pipeline_stages 
             SET name = %s, color = %s, description = %s
             WHERE id = %s
         ''', (form.name.data, form.color.data or '#6c757d', form.description.data, stage_id))
         
-        conn.commit()
+        safe_commit(conn, context="edit_stage")
         conn.close()
         
         flash(f'Pipeline stage "{form.name.data}" updated successfully!', 'success')
@@ -1308,13 +1325,14 @@ def edit_stage(stage_id):
 @app.route('/pipeline/stages/<int:stage_id>/delete', methods=['POST'])
 @login_required
 @role_required('admin')
+@retry_on_db_lock()
 def delete_stage(stage_id):
     """Delete pipeline stage"""
     conn = get_db()
     cursor = conn.cursor()
     
     # Check if stage has any leads
-    cursor.execute('SELECT COUNT(*) as count FROM leads WHERE current_stage_id = %s', (stage_id,))
+    execute_query(cursor, 'SELECT COUNT(*) as count FROM leads WHERE current_stage_id = %s', (stage_id,))
     count_row = cursor.fetchone()
     
     if count_row and count_row['count'] > 0:
@@ -1323,8 +1341,8 @@ def delete_stage(stage_id):
         return redirect(url_for('manage_stages'))
     
     # Delete stage
-    cursor.execute('DELETE FROM pipeline_stages WHERE id = %s', (stage_id,))
-    conn.commit()
+    execute_query(cursor, 'DELETE FROM pipeline_stages WHERE id = %s', (stage_id,))
+    safe_commit(conn, context="delete_stage")
     conn.close()
     
     flash('Pipeline stage deleted successfully!', 'success')
@@ -1382,6 +1400,7 @@ def reorder_stages():
 @app.route('/lead/new', methods=['GET', 'POST'])
 @login_required
 @role_required('marketer', 'manager')
+@retry_on_db_lock()
 def new_lead():
     conn = get_db()
     cursor = conn.cursor()
@@ -1479,20 +1498,32 @@ def new_lead():
                 assigned_manager_id = other_manager['id']
             assignment_method = 'random'
         
-        services_csv = ','.join([str(s) for s in form.services.data])
+        services_data = form.services.data or []
+        services_csv = ','.join([str(s) for s in services_data])
         
-        cursor.execute('''
-            INSERT INTO leads (submitted_by_user_id, full_name, email, phone, company, domain, 
-                             industry, services_csv, country, state, city, attachment_path, status, 
-                             current_manager_id, assigned_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pending', %s, %s)
-            RETURNING id
-        ''', (current_user.id, form.full_name.data, form.email.data, form.phone.data,
-              form.company.data, form.domain.data, form.industry.data, services_csv, form.country.data,
-              form.state.data, form.city.data, attachment_path, assigned_manager_id,
-              datetime.now() if assigned_manager_id else None))
+        assigned_at = datetime.now() if assigned_manager_id else None
         
-        lead_id = cursor.fetchone()['id']
+        if USE_POSTGRES:
+            execute_query(cursor, '''
+                INSERT INTO leads (submitted_by_user_id, full_name, email, phone, company, domain, 
+                                 industry, services_csv, country, state, city, attachment_path, status, 
+                                 current_manager_id, assigned_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pending', %s, %s)
+                RETURNING id
+            ''', (current_user.id, form.full_name.data, form.email.data, form.phone.data,
+                  form.company.data, form.domain.data, form.industry.data, services_csv, form.country.data,
+                  form.state.data, form.city.data, attachment_path, assigned_manager_id, assigned_at))
+            lead_id = cursor.fetchone()['id']
+        else:
+            execute_query(cursor, '''
+                INSERT INTO leads (submitted_by_user_id, full_name, email, phone, company, domain, 
+                                 industry, services_csv, country, state, city, attachment_path, status, 
+                                 current_manager_id, assigned_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pending', %s, %s)
+            ''', (current_user.id, form.full_name.data, form.email.data, form.phone.data,
+                  form.company.data, form.domain.data, form.industry.data, services_csv, form.country.data,
+                  form.state.data, form.city.data, attachment_path, assigned_manager_id, assigned_at))
+            lead_id = cursor.lastrowid
         
         # Save social profiles if provided
         social_profiles = []
@@ -1506,18 +1537,18 @@ def new_lead():
             social_profiles.append(('website', form.website_url.data))
         
         for platform, url in social_profiles:
-            cursor.execute('''
+            execute_query(cursor, '''
                 INSERT INTO lead_social_profiles (lead_id, platform, url, added_by_id)
                 VALUES (%s, %s, %s, %s)
             ''', (lead_id, platform, url, current_user.id))
         
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO lead_notes (lead_id, author_user_id, note_type, message)
             VALUES (%s, %s, 'system', %s)
         ''', (lead_id, current_user.id, f'Lead created by {current_user.name}'))
         
         if assigned_manager_id:
-            cursor.execute('''
+            execute_query(cursor, '''
                 SELECT name FROM users WHERE id = %s
             ''', (assigned_manager_id,))
             assigned_manager = cursor.fetchone()
@@ -1526,31 +1557,34 @@ def new_lead():
             if assignment_method == 'round-robin':
                 assignment_note += ' (round-robin distribution)'
             
-            cursor.execute('''
+            execute_query(cursor, '''
                 INSERT INTO lead_notes (lead_id, author_user_id, note_type, message)
                 VALUES (%s, %s, 'system', %s)
             ''', (lead_id, current_user.id, assignment_note))
             
-            cursor.execute('''
+            deadline_at = datetime.now() + timedelta(hours=15)
+            execute_query(cursor, '''
                 INSERT INTO lead_assignments (lead_id, manager_id, deadline_at, is_initial_assignment)
-                VALUES (%s, %s, NOW() + INTERVAL '15 hours', 1)
-            ''', (lead_id, assigned_manager_id))
+                VALUES (%s, %s, %s, 1)
+            ''', (lead_id, assigned_manager_id, deadline_at))
             
             notification_message = f'New lead from {current_user.name} has been assigned to you: {form.company.data}'
-            cursor.execute('''
+            execute_query(cursor, '''
                 INSERT INTO notifications (user_id, lead_id, message, notification_type)
                 VALUES (%s, %s, %s, %s)
             ''', (assigned_manager_id, lead_id, notification_message, 'assignment'))
             
             send_realtime_notification(assigned_manager_id, notification_message, 'assignment', play_sound=True)
         
-        conn.commit()
+        safe_commit(conn)
         conn.close()
         
         flash('Lead submitted successfully!', 'success')
         return redirect(url_for('dashboard'))
     
     conn.close()
+    if form.services.data is None:
+        form.services.data = []
     return render_template('lead_form.html', form=form, title='Submit New Lead')
 
 @app.route('/lead/<int:lead_id>')
@@ -1689,7 +1723,7 @@ def add_social_profile(lead_id):
     form = SocialProfileForm()
     
     if form.validate_on_submit():
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO lead_social_profiles (lead_id, platform, url, added_by_id)
             VALUES (%s, %s, %s, %s)
         ''', (lead_id, form.platform.data, form.url.data, current_user.id))
@@ -1728,7 +1762,7 @@ def delete_social_profile(lead_id, profile_id):
         conn.close()
         return redirect(url_for('dashboard'))
     
-    cursor.execute('DELETE FROM lead_social_profiles WHERE id = %s AND lead_id = %s', (profile_id, lead_id))
+    execute_query(cursor, 'DELETE FROM lead_social_profiles WHERE id = %s AND lead_id = %s', (profile_id, lead_id))
     conn.commit()
     
     # Emit Socket.IO event
@@ -1744,6 +1778,7 @@ def delete_social_profile(lead_id, profile_id):
 
 @app.route('/lead/<int:lead_id>/deal-amount', methods=['GET', 'POST'])
 @login_required
+@retry_on_db_lock()
 def update_deal_amount(lead_id):
     """Update deal amount - BD Sales (assigned) or Admin/Manager"""
     conn = get_db()
@@ -1772,9 +1807,9 @@ def update_deal_amount(lead_id):
     
     if form.validate_on_submit():
         old_amount = lead['deal_amount']
-        deal_amount = float(form.deal_amount.data) if form.deal_amount.data else None
+        deal_amount = float(form.deal_amount.data) if form.deal_amount.data is not None else None
         
-        cursor.execute('''
+        execute_query(cursor, '''
             UPDATE leads SET deal_amount = %s
             WHERE id = %s
         ''', (deal_amount, lead_id))
@@ -1787,7 +1822,7 @@ def update_deal_amount(lead_id):
             new_display = f'${deal_amount:,.2f}' if deal_amount else '$0.00'
             activity_description = f'Deal amount updated from {old_display} to {new_display}'
             
-            cursor.execute('''
+            execute_query(cursor, '''
                 INSERT INTO lead_activities (lead_id, activity_type, title, description, actor_id, created_at)
                 VALUES (%s, %s, %s, %s, %s, %s)
             ''', (lead_id, 'note', 'Deal Amount Updated', activity_description, current_user.id, datetime.now()))
@@ -1814,6 +1849,7 @@ def update_deal_amount(lead_id):
 
 @app.route('/lead/<int:lead_id>/activity/add', methods=['POST'])
 @login_required
+@retry_on_db_lock()
 def add_activity(lead_id):
     """Add activity - BD Sales (assigned) or Admin/Manager"""
     conn = get_db()
@@ -1849,15 +1885,23 @@ def add_activity(lead_id):
         due_at_utc = convert_ist_to_utc(form.due_at.data) if form.due_at.data else None
         reminder_at_utc = convert_ist_to_utc(form.reminder_at.data) if form.reminder_at.data else None
         
-        cursor.execute('''
-            INSERT INTO lead_activities 
-            (lead_id, actor_id, activity_type, title, description, due_at, reminder_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        ''', (lead_id, current_user.id, activity_type, title, description, due_at_utc, reminder_at_utc))
-        
-        activity_id = cursor.fetchone()['id']
-        conn.commit()
+        if USE_POSTGRES:
+            execute_query(cursor, '''
+                INSERT INTO lead_activities 
+                (lead_id, actor_id, activity_type, title, description, due_at, reminder_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            ''', (lead_id, current_user.id, activity_type, title, description, due_at_utc, reminder_at_utc))
+            activity_id = cursor.fetchone()['id']
+        else:
+            execute_query(cursor, '''
+                INSERT INTO lead_activities 
+                (lead_id, actor_id, activity_type, title, description, due_at, reminder_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ''', (lead_id, current_user.id, activity_type, title, description, due_at_utc, reminder_at_utc))
+            activity_id = cursor.lastrowid
+            
+        safe_commit(conn)
         
         # Emit Socket.IO event
         socketio.emit('lead_updated', {
@@ -1895,6 +1939,7 @@ def complete_activity(lead_id, activity_id):
 
 @app.route('/lead/<int:lead_id>/activity/<int:activity_id>/toggle_complete', methods=['POST'])
 @login_required
+@retry_on_db_lock()
 def toggle_task_complete(lead_id, activity_id):
     """Toggle task completion status - BD Sales (assigned) or Admin/Manager"""
     conn = get_db()
@@ -1940,7 +1985,7 @@ def toggle_task_complete(lead_id, activity_id):
         # Toggle completion status
         if activity['completed_at']:
             # Mark as incomplete
-            cursor.execute('''
+            execute_query(cursor, '''
                 UPDATE lead_activities 
                 SET completed_at = NULL
                 WHERE id = %s AND lead_id = %s
@@ -1951,7 +1996,7 @@ def toggle_task_complete(lead_id, activity_id):
             completed_at = None
         else:
             # Mark as complete
-            cursor.execute('''
+            execute_query(cursor, '''
                 UPDATE lead_activities 
                 SET completed_at = CURRENT_TIMESTAMP
                 WHERE id = %s AND lead_id = %s
@@ -1961,7 +2006,7 @@ def toggle_task_complete(lead_id, activity_id):
             is_completed = True
             
             # Get the updated completed_at timestamp
-            cursor.execute('SELECT completed_at FROM lead_activities WHERE id = %s', (activity_id,))
+            execute_query(cursor, 'SELECT completed_at FROM lead_activities WHERE id = %s', (activity_id,))
             updated = cursor.fetchone()
             completed_at = updated['completed_at'] if updated else None
         
@@ -2001,6 +2046,7 @@ def toggle_task_complete(lead_id, activity_id):
 
 @app.route('/lead/<int:lead_id>/activity/<int:activity_id>/delete', methods=['POST'])
 @login_required
+@retry_on_db_lock()
 def delete_activity(lead_id, activity_id):
     """Delete activity - BD Sales (assigned) or Admin/Manager"""
     conn = get_db()
@@ -2025,8 +2071,8 @@ def delete_activity(lead_id, activity_id):
         conn.close()
         return redirect(url_for('view_lead', lead_id=lead_id))
     
-    cursor.execute('DELETE FROM lead_activities WHERE id = %s AND lead_id = %s', (activity_id, lead_id))
-    conn.commit()
+    execute_query(cursor, 'DELETE FROM lead_activities WHERE id = %s AND lead_id = %s', (activity_id, lead_id))
+    safe_commit(conn)
     
     # Emit Socket.IO event
     socketio.emit('lead_updated', {
@@ -2043,6 +2089,7 @@ def delete_activity(lead_id, activity_id):
 @app.route('/lead/<int:lead_id>/accept', methods=['POST'])
 @login_required
 @role_required('admin', 'manager')
+@retry_on_db_lock()
 def accept_lead(lead_id):
     conn = get_db()
     cursor = conn.cursor()
@@ -2055,21 +2102,21 @@ def accept_lead(lead_id):
         conn.close()
         return redirect(url_for('dashboard'))
     
-    cursor.execute('UPDATE leads SET status = %s, accepted_at = CURRENT_TIMESTAMP WHERE id = %s', ('Accepted', lead_id))
+    execute_query(cursor, 'UPDATE leads SET status = %s, accepted_at = CURRENT_TIMESTAMP WHERE id = %s', ('Accepted', lead_id))
     
-    cursor.execute('''
+    execute_query(cursor, '''
         UPDATE lead_assignments 
         SET acted_at = CURRENT_TIMESTAMP, status = 'acted'
         WHERE lead_id = %s AND manager_id = %s AND status = 'pending'
     ''', (lead_id, current_user.id))
     
-    cursor.execute('''
+    execute_query(cursor, '''
         INSERT INTO lead_notes (lead_id, author_user_id, note_type, message)
         VALUES (%s, %s, 'system', %s)
     ''', (lead_id, current_user.id, f'Lead accepted by {current_user.name}'))
     
     notification_message = f'Your lead for {lead["company"]} has been accepted!'
-    cursor.execute('''
+    execute_query(cursor, '''
         INSERT INTO notifications (user_id, lead_id, message)
         VALUES (%s, %s, %s)
     ''', (lead['submitted_by_user_id'], lead_id, notification_message))
@@ -2084,6 +2131,7 @@ def accept_lead(lead_id):
 
 @app.route('/lead/<int:lead_id>/assign-bd', methods=['GET', 'POST'])
 @login_required
+@retry_on_db_lock()
 def assign_bd_sales(lead_id):
     """Assign or reassign accepted lead to BD Sales - Admin, Manager, or BD Sales can do this"""
     # Allow Admin, Manager, and BD Sales to reassign leads
@@ -2145,35 +2193,35 @@ def assign_bd_sales(lead_id):
         
         first_stage_id = first_stage['id']
         
-        cursor.execute('''
+        execute_query(cursor, '''
             UPDATE leads 
             SET assigned_bd_id = %s, assigned_to_bd_at = CURRENT_TIMESTAMP, current_stage_id = %s
             WHERE id = %s
         ''', (bd_sales_id, first_stage_id, lead_id))
         
         # Log assignment/reassignment to history with from/to BDs
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO bd_assignment_history (lead_id, from_bd_id, to_bd_id, assigned_by_id, reassigned_at, reason)
             VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, %s)
         ''', (lead_id, current_bd_id, bd_sales_id, current_user.id, assignment_note or (f'{"Reassigned" if is_reassignment else "Assigned"} by {current_user.name}')))
         
         # Log stage transition only if stage changed
         if first_stage_id and lead['current_stage_id'] != first_stage_id:
-            cursor.execute('''
+            execute_query(cursor, '''
                 INSERT INTO lead_stage_history (lead_id, from_stage_id, to_stage_id, changed_by_id, changed_at)
                 VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
             ''', (lead_id, lead['current_stage_id'], first_stage_id, current_user.id))
         
         # Only update round-robin pointer if BD changed (within same transaction to avoid locks)
         if current_bd_id != bd_sales_id:
-            cursor.execute('SELECT id FROM assignment_settings WHERE id = 1')
+            execute_query(cursor, 'SELECT id FROM assignment_settings WHERE id = 1')
             if not cursor.fetchone():
-                cursor.execute('''
+                execute_query(cursor, '''
                     INSERT INTO assignment_settings (id, last_assigned_manager_id, last_assigned_bd_id, updated_at)
                     VALUES (1, NULL, %s, CURRENT_TIMESTAMP)
                 ''', (bd_sales_id,))
             else:
-                cursor.execute('''
+                execute_query(cursor, '''
                     UPDATE assignment_settings 
                     SET last_assigned_bd_id = %s, updated_at = CURRENT_TIMESTAMP 
                     WHERE id = 1
@@ -2181,14 +2229,14 @@ def assign_bd_sales(lead_id):
         
         # Create notification and activity
         action_text = 'Reassigned' if is_reassignment else 'Assigned'
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO lead_activities (lead_id, actor_id, activity_type, title, description, created_at)
             VALUES (%s, %s, 'assignment', %s, %s, CURRENT_TIMESTAMP)
         ''', (lead_id, current_user.id, f'{action_text} to BD Sales', 
               f'{current_user.name} {action_text.lower()} this lead to {bd_user["name"]}' + (f'\n\nNote: {assignment_note}' if assignment_note else '')))
         
         notification_message = f'{"New" if not is_reassignment else "Reassigned"} lead assigned to you: {lead["company"]}'
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO notifications (user_id, lead_id, message)
             VALUES (%s, %s, %s)
         ''', (bd_sales_id, lead_id, notification_message))
@@ -2215,6 +2263,7 @@ def assign_bd_sales(lead_id):
 @app.route('/lead/<int:lead_id>/reject', methods=['GET', 'POST'])
 @login_required
 @role_required('admin', 'manager')
+@retry_on_db_lock()
 def reject_lead(lead_id):
     conn = get_db()
     cursor = conn.cursor()
@@ -2230,15 +2279,15 @@ def reject_lead(lead_id):
     form = RejectForm()
     
     if form.validate_on_submit():
-        cursor.execute('UPDATE leads SET status = %s WHERE id = %s', ('Rejected', lead_id))
+        execute_query(cursor, 'UPDATE leads SET status = %s WHERE id = %s', ('Rejected', lead_id))
         
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO lead_notes (lead_id, author_user_id, note_type, message)
             VALUES (%s, %s, 'rejection', %s)
         ''', (lead_id, current_user.id, form.rejection_comment.data))
         
         notification_message = f'Your lead for {lead["company"]} has been rejected. Please review the comments.'
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO notifications (user_id, lead_id, message)
             VALUES (%s, %s, %s)
         ''', (lead['submitted_by_user_id'], lead_id, notification_message))
@@ -2257,6 +2306,7 @@ def reject_lead(lead_id):
 @app.route('/lead/<int:lead_id>/revert', methods=['GET', 'POST'])
 @login_required
 @role_required('admin', 'manager')
+@retry_on_db_lock()
 def revert_lead(lead_id):
     """Allow managers to re-reject an accepted lead"""
     conn = get_db()
@@ -2280,29 +2330,29 @@ def revert_lead(lead_id):
     if form.validate_on_submit():
         from datetime import timedelta
         
-        cursor.execute('UPDATE leads SET status = %s, accepted_at = NULL, current_manager_id = %s WHERE id = %s', 
+        execute_query(cursor, 'UPDATE leads SET status = %s, accepted_at = NULL, current_manager_id = %s WHERE id = %s', 
                       ('Rejected', current_user.id, lead_id))
         
-        cursor.execute('''
+        execute_query(cursor, '''
             UPDATE lead_assignments 
             SET status = 'reverted'
             WHERE lead_id = %s AND status = 'acted'
         ''', (lead_id,))
         
         deadline = datetime.now() + timedelta(hours=4)
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO lead_assignments (lead_id, manager_id, assigned_at, deadline_at, status, is_initial_assignment)
             VALUES (%s, %s, CURRENT_TIMESTAMP, %s, 'pending', 0)
         ''', (lead_id, current_user.id, deadline.strftime('%Y-%m-%d %H:%M:%S')))
         
         reversion_message = f"Lead reverted from 'Accepted' to 'Rejected' by {current_user.name}.\nReason: {form.rejection_comment.data}"
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO lead_notes (lead_id, author_user_id, note_type, message)
             VALUES (%s, %s, 'reversion', %s)
         ''', (lead_id, current_user.id, reversion_message))
         
         notification_message = f'Your accepted lead for {lead["company"]} has been re-rejected by {current_user.name}. Please review the comments.'
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO notifications (user_id, lead_id, message)
             VALUES (%s, %s, %s)
         ''', (lead['submitted_by_user_id'], lead_id, notification_message))
@@ -2321,6 +2371,7 @@ def revert_lead(lead_id):
 @app.route('/lead/<int:lead_id>/resubmit', methods=['GET', 'POST'])
 @login_required
 @role_required('marketer', 'manager')
+@retry_on_db_lock()
 def resubmit_lead(lead_id):
     conn = get_db()
     cursor = conn.cursor()
@@ -2346,19 +2397,19 @@ def resubmit_lead(lead_id):
     form = ResubmitForm()
     
     if form.validate_on_submit():
-        cursor.execute('UPDATE leads SET status = %s WHERE id = %s', ('Resubmitted', lead_id))
+        execute_query(cursor, 'UPDATE leads SET status = %s WHERE id = %s', ('Resubmitted', lead_id))
         
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO lead_notes (lead_id, author_user_id, note_type, message)
             VALUES (%s, %s, 'resubmission', %s)
         ''', (lead_id, current_user.id, form.rectification_comment.data))
         
-        cursor.execute("SELECT id FROM users WHERE role IN ('admin', 'manager')")
+        execute_query(cursor, "SELECT id FROM users WHERE role IN ('admin', 'manager')")
         managers = cursor.fetchall()
         
         notification_message = f'Lead for {lead["company"]} has been resubmitted by {current_user.name} for re-review.'
         for manager in managers:
-            cursor.execute('''
+            execute_query(cursor, '''
                 INSERT INTO notifications (user_id, lead_id, message)
                 VALUES (%s, %s, %s)
             ''', (manager['id'], lead_id, notification_message))
@@ -3024,6 +3075,7 @@ def download_external():
 @app.route('/lead/<int:lead_id>/edit', methods=['GET', 'POST'])
 @login_required
 @role_required('admin', 'manager', 'marketer')
+@retry_on_db_lock()
 def edit_lead(lead_id):
     conn = get_db()
     cursor = conn.cursor()
@@ -3074,7 +3126,8 @@ def edit_lead(lead_id):
         if lead['city'] != form.city.data:
             changes.append(('city', lead['city'], form.city.data))
         
-        new_services_csv = ','.join([str(s) for s in (form.services.data or [])])
+        services_data = form.services.data or []
+        new_services_csv = ','.join([str(s) for s in services_data])
         if lead['services_csv'] != new_services_csv:
             # Parse old services - handle both IDs and names
             old_service_parts = [s.strip() for s in lead['services_csv'].split(',')]
@@ -3086,10 +3139,10 @@ def edit_lead(lead_id):
             else:
                 old_services = ', '.join(old_service_parts)
             
-            service_data = form.services.data or []
-            if len(service_data) > 0:
-                placeholders = ','.join(['%s'] * len(service_data))
-                cursor.execute(f'SELECT name FROM services WHERE id IN ({placeholders})', service_data)
+            
+            if len(services_data) > 0:
+                placeholders = ','.join(['%s'] * len(services_data))
+                cursor.execute(f'SELECT name FROM services WHERE id IN ({placeholders})', services_data)
                 new_services = ', '.join([row['name'] for row in cursor.fetchall()])
             else:
                 new_services = ''
@@ -3135,7 +3188,7 @@ def edit_lead(lead_id):
             attachment_path = new_attachment_value
         
         for field_name, old_val, new_val in changes:
-            cursor.execute('''
+            execute_query(cursor, '''
                 INSERT INTO lead_edit_changes (lead_id, editor_user_id, field_name, old_value, new_value)
                 VALUES (%s, %s, %s, %s, %s)
             ''', (lead_id, current_user.id, field_name, old_val, new_val))
@@ -3143,13 +3196,13 @@ def edit_lead(lead_id):
         change_details = '\n'.join([f"• {field}: '{old}' → '{new}'" for field, old, new in changes])
         edit_note = f"Lead edited by {current_user.name}:\n{change_details}\n\nSummary: {form.change_summary.data}"
         
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO lead_notes (lead_id, author_user_id, note_type, message)
             VALUES (%s, %s, 'edit', %s)
         ''', (lead_id, current_user.id, edit_note))
         
         # Handle social profile updates
-        cursor.execute('SELECT platform, url FROM lead_social_profiles WHERE lead_id = %s', (lead_id,))
+        execute_query(cursor, 'SELECT platform, url FROM lead_social_profiles WHERE lead_id = %s', (lead_id,))
         existing_profiles = {row['platform']: row['url'] for row in cursor.fetchall()}
         
         new_profiles = {}
@@ -3175,14 +3228,14 @@ def edit_lead(lead_id):
                     changes.append((f'{platform}_url', old_url, 'Removed'))
         
         # Delete all existing social profiles and add new ones
-        cursor.execute('DELETE FROM lead_social_profiles WHERE lead_id = %s', (lead_id,))
+        execute_query(cursor, 'DELETE FROM lead_social_profiles WHERE lead_id = %s', (lead_id,))
         for platform, url in new_profiles.items():
-            cursor.execute('''
+            execute_query(cursor, '''
                 INSERT INTO lead_social_profiles (lead_id, platform, url, added_by_id)
                 VALUES (%s, %s, %s, %s)
             ''', (lead_id, platform, url, current_user.id))
         
-        cursor.execute('''
+        execute_query(cursor, '''
             UPDATE leads SET full_name = %s, email = %s, phone = %s, company = %s, domain = %s, industry = %s,
                            services_csv = %s, country = %s, state = %s, city = %s, attachment_path = %s
             WHERE id = %s
@@ -3221,6 +3274,8 @@ def edit_lead(lead_id):
                 form.website_url.data = profile['url']
     
     conn.close()
+    if form.services.data is None:
+        form.services.data = []
     return render_template('lead_edit.html', form=form, lead_id=lead_id, title='Edit Lead')
 
 @app.route('/analytics')
@@ -3339,14 +3394,14 @@ def update_lead_stage(lead_id):
             old_stage_name = old_stage_row['name']
     
     # Update lead stage
-    cursor.execute('''
+    execute_query(cursor, '''
         UPDATE leads 
         SET current_stage_id = %s 
         WHERE id = %s
     ''', (new_stage_id, lead_id))
     
     # Record stage history
-    cursor.execute('''
+    execute_query(cursor, '''
         INSERT INTO lead_stage_history (lead_id, from_stage_id, to_stage_id, changed_by_id, note, changed_at)
         VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
     ''', (lead_id, old_stage_id, new_stage_id, current_user.id, 
@@ -3372,7 +3427,7 @@ def update_lead_stage(lead_id):
     
     # Notify BD Sales if someone else moved their lead
     if lead['assigned_bd_id'] and lead['assigned_bd_id'] != current_user.id:
-        cursor.execute('''
+        execute_query(cursor, '''
             INSERT INTO notifications (user_id, lead_id, message, notification_type, is_read, sound_enabled)
             VALUES (%s, %s, %s, 'info', 0, 0)
         ''', (lead['assigned_bd_id'], 
@@ -3407,7 +3462,7 @@ def manage_targets():
     cursor = conn.cursor()
     
     if current_user.role == 'admin':
-        cursor.execute('''
+        execute_query(cursor, '''
             SELECT t.*, u1.name as assigner_name, u2.name as assignee_name, u2.role as assignee_role
             FROM lead_targets t
             JOIN users u1 ON t.assigned_by_id = u1.id
@@ -3415,7 +3470,7 @@ def manage_targets():
             ORDER BY t.period_start DESC, t.created_at DESC
         ''')
     else:
-        cursor.execute('''
+        execute_query(cursor, '''
             SELECT t.*, u1.name as assigner_name, u2.name as assignee_name, u2.role as assignee_role
             FROM lead_targets t
             JOIN users u1 ON t.assigned_by_id = u1.id
@@ -3442,16 +3497,17 @@ def manage_targets():
 @app.route('/targets/new', methods=['GET', 'POST'])
 @login_required
 @role_required('admin', 'manager')
+@retry_on_db_lock()
 def new_target():
-    form = TargetForm()
-    
     conn = get_db()
     cursor = conn.cursor()
     
+    form = TargetForm()
+    
     if current_user.role == 'admin':
-        cursor.execute('SELECT id, name FROM users WHERE role = %s ORDER BY name', ('manager',))
+        execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ('manager',))
     else:
-        cursor.execute('SELECT id, name FROM users WHERE role = %s ORDER BY name', ('marketer',))
+        execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ('marketer',))
     
     assignees = cursor.fetchall()
     form.assignee.choices = [(u['id'], u['name']) for u in assignees]
@@ -3459,19 +3515,18 @@ def new_target():
     if form.validate_on_submit():
         if form.period_end.data and form.period_start.data and form.period_end.data <= form.period_start.data:
             flash('Period end must be after period start.', 'danger')
-        elif has_period_overlap(form.assignee.data, form.period_start.data, form.period_end.data):
+        elif has_period_overlap(form.assignee.data, form.period_start.data, form.period_end.data, cursor=cursor):
             flash('This period overlaps with an existing target for the selected user.', 'danger')
         else:
-            cursor.execute('''
+            execute_query(cursor, '''
                 INSERT INTO lead_targets (assigned_by_id, assignee_id, target_count, 
                                          period_start, period_end, target_type)
                 VALUES (%s, %s, %s, %s, %s, %s)
             ''', (current_user.id, form.assignee.data, form.target_count.data,
                   form.period_start.data, form.period_end.data, form.target_type.data))
             
-            conn.commit()
+            safe_commit(conn, context="new_target")
             conn.close()
-            
             flash('Target created successfully!', 'success')
             return redirect(url_for('manage_targets'))
     
@@ -3481,12 +3536,12 @@ def new_target():
 @app.route('/targets/<int:target_id>/edit', methods=['GET', 'POST'])
 @login_required
 @role_required('admin', 'manager')
+@retry_on_db_lock()
 def edit_target(target_id):
-    flash("Executing updated edit_target function.", "info")
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM lead_targets WHERE id = %s', (target_id,))
+    execute_query(cursor, 'SELECT * FROM lead_targets WHERE id = %s', (target_id,))
     target = cursor.fetchone()
     
     if not target:
@@ -3499,77 +3554,93 @@ def edit_target(target_id):
         conn.close()
         return redirect(url_for('manage_targets'))
     
-    form = TargetForm(obj=target)
-    
-    cursor.execute('SELECT role FROM users WHERE id = %s', (target['assignee_id'],))
+    execute_query(cursor, 'SELECT role FROM users WHERE id = %s', (target['assignee_id'],))
     assignee_user = cursor.fetchone()
     if not assignee_user:
         flash(f"Assignee user with ID {target['assignee_id']} not found. Cannot edit target.", 'danger')
         conn.close()
         return redirect(url_for('manage_targets'))
-    assignee_role = assignee_user['role']
     
+    # Get assignee choices for the form - do this BEFORE form instantiation
     if current_user.role == 'admin':
-        cursor.execute('SELECT id, name FROM users WHERE role = %s ORDER BY name', ('manager',))
+        execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ('manager',))
     else:
-        cursor.execute('SELECT id, name FROM users WHERE role = %s ORDER BY name', ('marketer',))
+        execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ('marketer',))
     
     assignees = cursor.fetchall()
-    form.assignee.choices = [(u['id'], u['name']) for u in assignees]
+    assignee_choices = [(u['id'], u['name']) for u in assignees]
+    
+    # Create form and set choices
+    form = TargetForm()
+    form.assignee.choices = assignee_choices
     
     if form.validate_on_submit():
         if form.period_end.data and form.period_start.data and form.period_end.data <= form.period_start.data:
             flash('Period end must be after period start.', 'danger')
-        elif has_period_overlap(form.assignee.data, form.period_start.data, form.period_end.data, exclude_id=target_id):
+        elif has_period_overlap(form.assignee.data, form.period_start.data, form.period_end.data, exclude_id=target_id, cursor=cursor):
             flash('This period overlaps with an existing target for the selected user.', 'danger')
         else:
-            cursor.execute('''
+            execute_query(cursor, '''
                 UPDATE lead_targets 
                 SET assignee_id = %s, target_count = %s, period_start = %s, period_end = %s, target_type = %s
                 WHERE id = %s
             ''', (form.assignee.data, form.target_count.data, form.period_start.data,
                   form.period_end.data, form.target_type.data, target_id))
             
-            conn.commit()
+            safe_commit(conn, context="edit_target")
             conn.close()
-            
             flash('Target updated successfully!', 'success')
             return redirect(url_for('manage_targets'))
-    else:
+    
+    # Populate form fields on GET request
+    if request.method == 'GET':
         try:
             form.assignee.data = target['assignee_id']
             form.target_count.data = target['target_count']
-            form.period_start.data = datetime.strptime(target['period_start'], '%Y-%m-%d').date()
-            form.period_end.data = datetime.strptime(target['period_end'], '%Y-%m-%d').date()
+            
+            period_start = target.get('period_start')
+            if isinstance(period_start, str):
+                form.period_start.data = datetime.strptime(period_start, '%Y-%m-%d').date()
+            elif isinstance(period_start, date):
+                form.period_start.data = period_start
+            
+            period_end = target.get('period_end')
+            if isinstance(period_end, str):
+                form.period_end.data = datetime.strptime(period_end, '%Y-%m-%d').date()
+            elif isinstance(period_end, date):
+                form.period_end.data = period_end
+
             form.target_type.data = target['target_type']
         except (ValueError, TypeError) as e:
             conn.close()
-            flash(f"Error loading target data: Invalid date format in database. Please check target with ID {target_id}.", "danger")
+            flash(f"Error loading target data: Invalid date format in database for target ID {target_id}. Please check the data.", "danger")
             return redirect(url_for('manage_targets'))
-
+    
     conn.close()
     return render_template('target_form.html', form=form, title='Edit Target', target_id=target_id)
 
 @app.route('/targets/<int:target_id>/delete', methods=['POST'])
 @login_required
 @role_required('admin', 'manager')
+@retry_on_db_lock()
 def delete_target(target_id):
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM lead_targets WHERE id = %s', (target_id,))
-    target = cursor.fetchone()
-    
-    if not target:
-        flash('Target not found.', 'danger')
-    elif current_user.role != 'admin' and target['assigned_by_id'] != current_user.id:
-        flash('You do not have permission to delete this target.', 'danger')
-    else:
-        cursor.execute('DELETE FROM lead_targets WHERE id = %s', (target_id,))
-        conn.commit()
-        flash('Target deleted successfully!', 'success')
-    
-    conn.close()
+    try:
+        execute_query(cursor, 'SELECT * FROM lead_targets WHERE id = %s', (target_id,))
+        target = cursor.fetchone()
+        
+        if not target:
+            flash('Target not found.', 'danger')
+        elif current_user.role != 'admin' and target['assigned_by_id'] != current_user.id:
+            flash('You do not have permission to delete this target.', 'danger')
+        else:
+            execute_query(cursor, 'DELETE FROM lead_targets WHERE id = %s', (target_id,))
+            safe_commit(conn, context="delete_target")
+            flash('Target deleted successfully!', 'success')
+    finally:
+        conn.close()
     return redirect(url_for('manage_targets'))
 
 def backfill_acceptance_timestamps():
@@ -3802,6 +3873,18 @@ def add_protected_users_column():
 
 with app.app_context():
     init_db()
+
+# Enable WAL mode for SQLite to improve concurrency and reduce locking errors
+with app.app_context():
+    if not USE_POSTGRES:
+        try:
+            conn = get_db()
+            conn.execute('PRAGMA journal_mode=WAL;')
+            conn.commit()
+            conn.close()
+            print('SQLite WAL mode enabled')
+        except Exception as e:
+            print(f'Failed to enable WAL mode: {e}')
 
 with app.app_context():
     backfill_acceptance_timestamps()
