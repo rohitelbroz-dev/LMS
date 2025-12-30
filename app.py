@@ -57,6 +57,9 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['CACHE_TYPE'] = 'SimpleCache'  # Use SimpleCache for free tier, or Redis if available
 app.config['CACHE_DEFAULT_TIMEOUT'] = 300  # 5 minutes
 
+# Add built-in functions to Jinja2 globals for template use
+app.jinja_env.globals.update(max=max, min=min)
+
 # Fix URL generation behind proxy (GitHub Codespaces, Render, etc.)
 app.config['PREFERRED_URL_SCHEME'] = 'https'
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
@@ -135,7 +138,9 @@ def inject_helper_functions():
         get_user_avatar=get_user_avatar,
         ROLE_LABELS=ROLE_LABELS,
         ROLE_BADGE_COLORS=ROLE_BADGE_COLORS,
-        format_indian_datetime=format_indian_datetime
+        format_indian_datetime=format_indian_datetime,
+        max=max,
+        min=min
     )
 
 def convert_to_indian_timezone(dt_string):
