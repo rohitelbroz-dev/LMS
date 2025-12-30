@@ -886,11 +886,12 @@ def logout():
 
 @app.route('/dashboard')
 @login_required
+@retry_on_db_lock()
 def dashboard():
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute(
+    execute_query(cursor,
         'SELECT COUNT(*) as count FROM notifications WHERE user_id = %s AND is_read = 0',
         (current_user.id,)
     )
@@ -1177,19 +1178,20 @@ def dashboard():
 @app.route('/pipeline')
 @login_required
 @role_required('admin', 'manager', 'bd_sales')
+@retry_on_db_lock()
 def pipeline():
     """Sales Pipeline Kanban View - BD Sales sees assigned leads, Admin/EM Team Leader see all"""
     conn = get_db()
     cursor = conn.cursor()
     
     # Get all pipeline stages ordered by position
-    cursor.execute('SELECT * FROM pipeline_stages ORDER BY position ASC')
+    execute_query(cursor, 'SELECT * FROM pipeline_stages ORDER BY position ASC')
     stages = cursor.fetchall()
     
     # Fetch leads with BD assignments based on role
     if current_user.role == 'bd_sales':
         # BD Sales sees only leads assigned to them
-        cursor.execute('''
+        execute_query(cursor, '''
             SELECT l.*, u.name as submitter_name, bd.name as bd_name
             FROM leads l
             LEFT JOIN users u ON l.submitted_by_user_id = u.id
@@ -1199,7 +1201,7 @@ def pipeline():
         ''', (current_user.id,))
     else:
         # Admin and EM Team Leader see all leads with BD assignments
-        cursor.execute('''
+        execute_query(cursor, '''
             SELECT l.*, u.name as submitter_name, bd.name as bd_name
             FROM leads l
             LEFT JOIN users u ON l.submitted_by_user_id = u.id
@@ -1589,11 +1591,12 @@ def new_lead():
 
 @app.route('/lead/<int:lead_id>')
 @login_required
+@retry_on_db_lock()
 def view_lead(lead_id):
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM leads WHERE id = %s', (lead_id,))
+    execute_query(cursor, 'SELECT * FROM leads WHERE id = %s', (lead_id,))
     lead = cursor.fetchone()
     
     if not lead:
@@ -1606,7 +1609,7 @@ def view_lead(lead_id):
         conn.close()
         return redirect(url_for('dashboard'))
     
-    cursor.execute('SELECT name FROM users WHERE id = %s', (lead['submitted_by_user_id'],))
+    execute_query(cursor, 'SELECT name FROM users WHERE id = %s', (lead['submitted_by_user_id'],))
     submitter = cursor.fetchone()
     
     # Parse services - handle both IDs and names in CSV
@@ -1618,13 +1621,13 @@ def view_lead(lead_id):
             # CSV contains IDs
             service_ids = [int(s) for s in service_parts]
             placeholders = ','.join(['%s'] * len(service_ids))
-            cursor.execute(f'SELECT name FROM services WHERE id IN ({placeholders})', service_ids)
+            execute_query(cursor, f'SELECT name FROM services WHERE id IN ({placeholders})', service_ids)
             services = [row['name'] for row in cursor.fetchall()]
         else:
             # CSV contains names directly
             services = service_parts
     
-    cursor.execute('''
+    execute_query(cursor, '''
         SELECT ln.*, u.name as author_name 
         FROM lead_notes ln
         JOIN users u ON ln.author_user_id = u.id
@@ -1636,7 +1639,7 @@ def view_lead(lead_id):
     deadline = None
     is_overdue = False
     if lead['status'] in ['Pending', 'Resubmitted']:
-        cursor.execute('''
+        execute_query(cursor, '''
             SELECT deadline_at FROM lead_assignments 
             WHERE lead_id = %s AND status = 'pending'
             ORDER BY assigned_at DESC LIMIT 1
@@ -1654,17 +1657,17 @@ def view_lead(lead_id):
     current_stage = None
     bd_assignment_history = []
     
-    cursor.execute('SELECT * FROM lead_social_profiles WHERE lead_id = %s', (lead_id,))
+    execute_query(cursor, 'SELECT * FROM lead_social_profiles WHERE lead_id = %s', (lead_id,))
     social_profiles = cursor.fetchall()
     
     # Build unified timeline from all sources
     timeline = build_unified_timeline(lead_id, lead, cursor)
     
     if lead['assigned_bd_id']:
-        cursor.execute('SELECT id, name, email FROM users WHERE id = %s', (lead['assigned_bd_id'],))
+        execute_query(cursor, 'SELECT id, name, email FROM users WHERE id = %s', (lead['assigned_bd_id'],))
         bd_sales_info = cursor.fetchone()
         
-        cursor.execute('''
+        execute_query(cursor, '''
             SELECT * FROM bd_assignment_history 
             WHERE lead_id = %s 
             ORDER BY reassigned_at DESC
@@ -1672,11 +1675,11 @@ def view_lead(lead_id):
         bd_assignment_history = cursor.fetchall()
         
         if lead['current_stage_id']:
-            cursor.execute('SELECT * FROM pipeline_stages WHERE id = %s', (lead['current_stage_id'],))
+            execute_query(cursor, 'SELECT * FROM pipeline_stages WHERE id = %s', (lead['current_stage_id'],))
             current_stage = cursor.fetchone()
     
     # Get all pipeline stages for the stage editor dropdown
-    cursor.execute('SELECT id, name, position FROM pipeline_stages ORDER BY position')
+    execute_query(cursor, 'SELECT id, name, position FROM pipeline_stages ORDER BY position')
     all_stages = cursor.fetchall()
     
     conn.close()
@@ -2094,7 +2097,7 @@ def accept_lead(lead_id):
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM leads WHERE id = %s', (lead_id,))
+    execute_query(cursor, 'SELECT * FROM leads WHERE id = %s', (lead_id,))
     lead = cursor.fetchone()
     
     if not lead:
@@ -2142,7 +2145,7 @@ def assign_bd_sales(lead_id):
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM leads WHERE id = %s', (lead_id,))
+    execute_query(cursor, 'SELECT * FROM leads WHERE id = %s', (lead_id,))
     lead = cursor.fetchone()
     
     if not lead:
@@ -2161,7 +2164,7 @@ def assign_bd_sales(lead_id):
     
     form = BDAssignmentForm()
     
-    cursor.execute('SELECT id, name, email FROM users WHERE role = %s ORDER BY name', (ROLE_BD_SALES,))
+    execute_query(cursor, 'SELECT id, name, email FROM users WHERE role = %s ORDER BY name', (ROLE_BD_SALES,))
     bd_sales_users = cursor.fetchall()
     
     if not bd_sales_users:
@@ -2179,11 +2182,11 @@ def assign_bd_sales(lead_id):
         bd_sales_id = form.bd_sales_id.data
         assignment_note = form.note.data
         
-        cursor.execute('SELECT name FROM users WHERE id = %s', (bd_sales_id,))
+        execute_query(cursor, 'SELECT name FROM users WHERE id = %s', (bd_sales_id,))
         bd_user = cursor.fetchone()
         
         # Get the first pipeline stage ID
-        cursor.execute('SELECT id FROM pipeline_stages ORDER BY position LIMIT 1')
+        execute_query(cursor, 'SELECT id FROM pipeline_stages ORDER BY position LIMIT 1')
         first_stage = cursor.fetchone()
         
         if not first_stage:
@@ -2268,7 +2271,7 @@ def reject_lead(lead_id):
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM leads WHERE id = %s', (lead_id,))
+    execute_query(cursor, 'SELECT * FROM leads WHERE id = %s', (lead_id,))
     lead = cursor.fetchone()
     
     if not lead:
@@ -2312,7 +2315,7 @@ def revert_lead(lead_id):
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM leads WHERE id = %s', (lead_id,))
+    execute_query(cursor, 'SELECT * FROM leads WHERE id = %s', (lead_id,))
     lead = cursor.fetchone()
     
     if not lead:
@@ -2376,7 +2379,7 @@ def resubmit_lead(lead_id):
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM leads WHERE id = %s', (lead_id,))
+    execute_query(cursor, 'SELECT * FROM leads WHERE id = %s', (lead_id,))
     lead = cursor.fetchone()
     
     if not lead:
@@ -3080,7 +3083,7 @@ def edit_lead(lead_id):
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM leads WHERE id = %s', (lead_id,))
+    execute_query(cursor, 'SELECT * FROM leads WHERE id = %s', (lead_id,))
     lead = cursor.fetchone()
     
     if not lead:
@@ -3099,7 +3102,7 @@ def edit_lead(lead_id):
             conn.close()
             return redirect(url_for('view_lead', lead_id=lead_id))
     
-    cursor.execute('SELECT * FROM services ORDER BY name')
+    execute_query(cursor, 'SELECT * FROM services ORDER BY name')
     services = cursor.fetchall()
     form = LeadEditForm()
     form.services.choices = [(s['id'], s['name']) for s in services]
@@ -3134,7 +3137,7 @@ def edit_lead(lead_id):
             if old_service_parts and old_service_parts[0].isdigit():
                 old_service_ids = [int(s) for s in old_service_parts]
                 placeholders = ','.join(['%s'] * len(old_service_ids))
-                cursor.execute(f'SELECT name FROM services WHERE id IN ({placeholders})', old_service_ids)
+                execute_query(cursor, f'SELECT name FROM services WHERE id IN ({placeholders})', old_service_ids)
                 old_services = ', '.join([row['name'] for row in cursor.fetchall()])
             else:
                 old_services = ', '.join(old_service_parts)
@@ -3142,7 +3145,7 @@ def edit_lead(lead_id):
             
             if len(services_data) > 0:
                 placeholders = ','.join(['%s'] * len(services_data))
-                cursor.execute(f'SELECT name FROM services WHERE id IN ({placeholders})', services_data)
+                execute_query(cursor, f'SELECT name FROM services WHERE id IN ({placeholders})', services_data)
                 new_services = ', '.join([row['name'] for row in cursor.fetchall()])
             else:
                 new_services = ''
@@ -3261,7 +3264,7 @@ def edit_lead(lead_id):
         form.city.data = lead['city']
         
         # Load existing social profiles
-        cursor.execute('SELECT platform, url FROM lead_social_profiles WHERE lead_id = %s', (lead_id,))
+        execute_query(cursor, 'SELECT platform, url FROM lead_social_profiles WHERE lead_id = %s', (lead_id,))
         social_profiles = cursor.fetchall()
         for profile in social_profiles:
             if profile['platform'] == 'linkedin':
