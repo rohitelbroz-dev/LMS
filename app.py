@@ -1129,14 +1129,15 @@ def dashboard():
         execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ['marketer'])
         submitters = cursor.fetchall()
     
-        execute_query(cursor, '''
-                SELECT * FROM lead_targets 
-                WHERE assignee_id = %s 
-                    AND period_start <= CURRENT_DATE
-                    AND period_end >= CURRENT_DATE
-                ORDER BY period_end ASC
-                LIMIT 3
-        ''', [current_user.id])
+    # Fetch active targets for current user (all roles can have targets assigned)
+    execute_query(cursor, '''
+            SELECT * FROM lead_targets 
+            WHERE assignee_id = %s 
+                AND period_start <= CURRENT_DATE
+                AND period_end >= CURRENT_DATE
+            ORDER BY period_end ASC
+            LIMIT 3
+    ''', [current_user.id])
     active_targets_raw = cursor.fetchall()
     
     active_targets = []
