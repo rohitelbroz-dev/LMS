@@ -3513,10 +3513,8 @@ def new_target():
     
     form = TargetForm()
     
-    if current_user.role == 'admin':
-        execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ('manager',))
-    else:
-        execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ('marketer',))
+    # Always fetch managers (EM Team Leaders) to assign targets to
+    execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ('manager',))
     
     assignees = cursor.fetchall()
     form.assignee.choices = [(u['id'], u['name']) for u in assignees]
@@ -3571,10 +3569,8 @@ def edit_target(target_id):
         return redirect(url_for('manage_targets'))
     
     # Get assignee choices for the form - do this BEFORE form instantiation
-    if current_user.role == 'admin':
-        execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ('manager',))
-    else:
-        execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ('marketer',))
+    # Always fetch managers (EM Team Leaders) to assign targets to
+    execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ('manager',))
     
     assignees = cursor.fetchall()
     assignee_choices = [(u['id'], u['name']) for u in assignees]
