@@ -982,9 +982,9 @@ def dashboard():
                     SELECT MAX(deadline_at) FROM lead_assignments 
                     WHERE lead_id = l.id AND status = 'pending'
                 )
-            WHERE l.submitted_by_user_id = %s
+            WHERE l.submitted_by_user_id = %s AND l.is_deleted = %s
         '''
-        params = [current_user.id]
+        params = [current_user.id, False]
     elif current_user.role == 'bd_sales':
         base_query = '''
             SELECT l.*, u.name as submitter_name, la.deadline_at,
@@ -997,9 +997,9 @@ def dashboard():
                     SELECT MAX(deadline_at) FROM lead_assignments 
                     WHERE lead_id = l.id AND status = 'pending'
                 )
-            WHERE l.assigned_bd_id = %s
+            WHERE l.assigned_bd_id = %s AND l.is_deleted = %s
         '''
-        params = [current_user.id]
+        params = [current_user.id, False]
     else:
         base_query = '''
             SELECT l.*, u.name as submitter_name, la.deadline_at,
@@ -1012,9 +1012,9 @@ def dashboard():
                     SELECT MAX(deadline_at) FROM lead_assignments 
                     WHERE lead_id = l.id AND status = 'pending'
                 )
-            WHERE 1=1
+            WHERE l.is_deleted = %s
         '''
-        params = []
+        params = [False]
     
     if status_filter:
         base_query += ' AND l.status = %s'
@@ -1048,23 +1048,23 @@ def dashboard():
         count_query = '''
             SELECT COUNT(*) as total
             FROM leads l
-            WHERE l.submitted_by_user_id = %s
+            WHERE l.submitted_by_user_id = %s AND l.is_deleted = %s
         '''
-        count_params = [current_user.id]
+        count_params = [current_user.id, False]
     elif current_user.role == 'bd_sales':
         count_query = '''
             SELECT COUNT(*) as total
             FROM leads l
-            WHERE l.assigned_bd_id = %s
+            WHERE l.assigned_bd_id = %s AND l.is_deleted = %s
         '''
-        count_params = [current_user.id]
+        count_params = [current_user.id, False]
     else:
         count_query = '''
             SELECT COUNT(*) as total
             FROM leads l
-            WHERE 1=1
+            WHERE l.is_deleted = %s
         '''
-        count_params = []
+        count_params = [False]
     
     # Add same filters to count_query
     if status_filter:
