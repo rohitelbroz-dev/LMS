@@ -1103,7 +1103,7 @@ def dashboard():
     status_count_query = count_query.replace('SELECT COUNT(*) as total', 'SELECT l.status, COUNT(*) as count')
     status_count_query += ' GROUP BY l.status'
     execute_query(cursor, status_count_query, count_params)
-    status_counts_raw = cursor.fetchall()
+    status_counts_raw = list(cursor.fetchall())
     status_counts = {row['status']: row['count'] for row in status_counts_raw}
     
     # Add LIMIT and OFFSET
@@ -1111,7 +1111,7 @@ def dashboard():
     params.extend([per_page, offset])
     
     execute_query(cursor, base_query, params)
-    leads_raw = cursor.fetchall()
+    leads_raw = list(cursor.fetchall())
     
     # Format leads for template
     leads_with_submitters = []
@@ -1124,13 +1124,17 @@ def dashboard():
         })
     
     execute_query(cursor, 'SELECT * FROM services ORDER BY name', [])
-    services = cursor.fetchall()
+    services = list(cursor.fetchall())
     
     # Only admin and manager can filter by submitter
     submitters = []
     if current_user.role in ['admin', 'manager']:
         execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ['marketer'])
-        submitters = cursor.fetchall()
+        submitters = list(cursor.fetchall())
+    elif current_user.role == 'bd_sales':
+        # BD Sales can also see submitters to filter by them
+        execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ['marketer'])
+        submitters = list(cursor.fetchall())
     
     # Fetch active targets for current user (all roles can have targets assigned)
     execute_query(cursor, '''
@@ -1141,7 +1145,7 @@ def dashboard():
             ORDER BY period_end ASC
             LIMIT 3
     ''', [current_user.id])
-    active_targets_raw = cursor.fetchall()
+    active_targets_raw = list(cursor.fetchall())
     
     active_targets = []
     for target in active_targets_raw:
