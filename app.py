@@ -1525,22 +1525,22 @@ def new_lead():
             execute_query(cursor, '''
                 INSERT INTO leads (submitted_by_user_id, full_name, email, phone, company, domain, 
                                  industry, services_csv, country, state, city, attachment_path, status, 
-                                 current_manager_id, assigned_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pending', %s, %s)
+                                 current_manager_id, assigned_at, client_response_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pending', %s, %s, %s)
                 RETURNING id
             ''', (current_user.id, form.full_name.data, form.email.data, form.phone.data,
                   form.company.data, form.domain.data, form.industry.data, services_csv, form.country.data,
-                  form.state.data, form.city.data, attachment_path, assigned_manager_id, assigned_at))
+                  form.state.data, form.city.data, attachment_path, assigned_manager_id, assigned_at, form.client_response_date.data))
             lead_id = cursor.fetchone()['id']
         else:
             execute_query(cursor, '''
                 INSERT INTO leads (submitted_by_user_id, full_name, email, phone, company, domain, 
                                  industry, services_csv, country, state, city, attachment_path, status, 
-                                 current_manager_id, assigned_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pending', %s, %s)
+                                 current_manager_id, assigned_at, client_response_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pending', %s, %s, %s)
             ''', (current_user.id, form.full_name.data, form.email.data, form.phone.data,
                   form.company.data, form.domain.data, form.industry.data, services_csv, form.country.data,
-                  form.state.data, form.city.data, attachment_path, assigned_manager_id, assigned_at))
+                  form.state.data, form.city.data, attachment_path, assigned_manager_id, assigned_at, form.client_response_date.data))
             lead_id = cursor.lastrowid
         
         # Save social profiles if provided
@@ -3256,11 +3256,11 @@ def edit_lead(lead_id):
         
         execute_query(cursor, '''
             UPDATE leads SET full_name = %s, email = %s, phone = %s, company = %s, domain = %s, industry = %s,
-                           services_csv = %s, country = %s, state = %s, city = %s, attachment_path = %s
+                           services_csv = %s, country = %s, state = %s, city = %s, attachment_path = %s, client_response_date = %s
             WHERE id = %s
         ''', (form.full_name.data, form.email.data, form.phone.data, form.company.data,
               form.domain.data, form.industry.data, new_services_csv, form.country.data, form.state.data,
-              form.city.data, attachment_path, lead_id))
+              form.city.data, attachment_path, form.client_response_date.data, lead_id))
         
         safe_commit(conn)
         conn.close()
@@ -3278,6 +3278,7 @@ def edit_lead(lead_id):
         form.country.data = lead['country']
         form.state.data = lead['state']
         form.city.data = lead['city']
+        form.client_response_date.data = lead['client_response_date']
         
         # Load existing social profiles
         execute_query(cursor, 'SELECT platform, url FROM lead_social_profiles WHERE lead_id = %s', (lead_id,))

@@ -60,6 +60,17 @@
                     </div>
                 </div>
                 
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Client Response Date:</strong>
+                        {% if lead.client_response_date %}
+                            {{ format_indian_datetime(lead.client_response_date, 'date') }}
+                        {% else %}
+                            <span class="text-muted">-</span>
+                        {% endif %}
+                    </div>
+                </div>
+                
                 <hr>
                 
                 <h6>Contact Information</h6>

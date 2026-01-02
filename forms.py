@@ -19,6 +19,7 @@ class LeadForm(FlaskForm):
     country = StringField('Country', validators=[DataRequired(), Length(max=100)])
     state = StringField('State', validators=[DataRequired(), Length(max=100)])
     city = StringField('City', validators=[DataRequired(), Length(max=100)])
+    client_response_date = DateField('Client Response Date', validators=[Optional()])
     attachment = FileField('Attachment', validators=[
         Optional(),
         FileAllowed(['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'], 'Only documents and images allowed!')
@@ -88,6 +89,7 @@ class LeadEditForm(FlaskForm):
     country = StringField('Country', validators=[DataRequired(), Length(max=100)])
     state = StringField('State', validators=[DataRequired(), Length(max=100)])
     city = StringField('City', validators=[DataRequired(), Length(max=100)])
+    client_response_date = DateField('Client Response Date', validators=[Optional()])
     attachment = FileField('Attachment', validators=[
         Optional(),
         FileAllowed(['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'], 'Only documents and images allowed!')

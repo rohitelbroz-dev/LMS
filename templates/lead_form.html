@@ -110,6 +110,15 @@
                     </div>
                     
                     <div class="mb-3">
+                        {{ form.client_response_date.label(class="form-label") }}
+                        {{ form.client_response_date(class="form-control" + (" is-invalid" if form.client_response_date.errors else "")) }}
+                        <div class="form-text">Select when you expect the client to respond (optional)</div>
+                        {% if form.client_response_date.errors %}
+                            <div class="invalid-feedback">{{ form.client_response_date.errors[0] }}</div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
                         <div class="card bg-light">
                             <div class="card-header">
                                 <h6 class="mb-0">
