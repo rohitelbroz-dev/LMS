@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block authenticated_content %}
+<style>
+    .recycle-bin-header {
+        background: linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(96, 165, 250, 0.1) 100%);
+        border-left: 4px solid #a855f7;
+        padding: 2rem;
+        border-radius: 12px;
+        margin-bottom: 2rem;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .recycle-bin-header h1 {
+        color: #a855f7;
+        font-weight: 700;
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .recycle-bin-header .text-subtitle {
+        color: #60a5fa;
+        font-weight: 500;
+        font-size: 1rem;
+        margin-top: 0.5rem;
+    }
+
+    .recycle-bin-card {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+    }
+
+    .recycle-bin-card .table thead {
+        background: linear-gradient(135deg, #a855f7 0%, #60a5fa 100%);
+        color: white;
+    }
+
+    .recycle-bin-card .table thead th {
+        border: none;
+        font-weight: 600;
+        padding: 1.25rem;
+        text-transform: uppercase;
+        font-size: 0.875rem;
+        letter-spacing: 0.5px;
+    }
+
+    .recycle-bin-card .table tbody tr {
+        border-bottom: 1px solid #e5e7eb;
+        transition: all 0.3s ease;
+    }
+
+    .recycle-bin-card .table tbody tr:hover {
+        background-color: rgba(168, 85, 247, 0.05);
+        box-shadow: inset 4px 0 0 #a855f7;
+    }
+
+    .recycle-bin-card .table tbody td {
+        padding: 1.25rem;
+        vertical-align: middle;
+    }
+
+    .lead-name {
+        color: #1e1b4b;
+        font-weight: 600;
+        font-size: 1rem;
+    }
+
+    .lead-email {
+        color: #60a5fa;
+        text-decoration: none;
+        transition: color 0.3s ease;
+    }
+
+    .lead-email:hover {
+        color: #a855f7;
+        text-decoration: underline;
+    }
+
+    .deleted-by-badge {
+        background: linear-gradient(135deg, #a855f7 0%, #60a5fa 100%);
+        color: white;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+
+    .deleted-date {
+        color: #6b7280;
+        font-size: 0.875rem;
+    }
+
+    .btn-restore {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        border: none;
+        color: white;
+        font-weight: 600;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        transition: all 0.3s ease;
+    }
+
+    .btn-restore:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        color: white;
+    }
+
+    .empty-state {
+        background: linear-gradient(135deg, rgba(96, 165, 250, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
+        border: 2px dashed #60a5fa;
+        border-radius: 12px;
+        padding: 3rem;
+        text-align: center;
+    }
+
+    .empty-state i {
+        color: #a855f7;
+        font-size: 3rem;
+        margin-bottom: 1rem;
+    }
+
+    .empty-state-title {
+        color: #a855f7;
+        font-weight: 700;
+        font-size: 1.25rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .empty-state-text {
+        color: #60a5fa;
+        font-size: 1rem;
+    }
+</style>
+
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="recycle-bin-header">
+                <h1 class="mb-0">
+                    <i class="fas fa-trash me-2"></i>Recycle Bin
+                </h1>
+                <p class="text-subtitle mt-2">
+                    <i class="fas fa-info-circle me-2"></i>Manage deleted leads. Only you can restore them.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    {% if deleted_leads %}
+    <div class="card recycle-bin-card">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Lead Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Company</th>
+                        <th>Deleted By</th>
+                        <th>Deleted Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for lead in deleted_leads %}
+                    <tr>
+                        <td>
+                            <span class="lead-name">{{ lead['full_name'] }}</span>
+                        </td>
+                        <td>
+                            <a href="mailto:{{ lead['email'] }}" class="lead-email">{{ lead['email'] }}</a>
+                        </td>
+                        <td>
+                            <span style="color: #374151;">{{ lead['phone'] }}</span>
+                        </td>
+                        <td>
+                            <span style="color: #6b7280;">{{ lead['company'] }}</span>
+                        </td>
+                        <td>
+                            <span class="deleted-by-badge">{{ lead['deleted_by_name'] }}</span>
+                        </td>
+                        <td>
+                            {% if lead['deleted_at'] %}
+                                <span class="deleted-date">{{ lead['deleted_at'].strftime('%Y-%m-%d %H:%M:%S') if lead['deleted_at'] is not none else 'N/A' }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form method="POST" action="{{ url_for('restore_lead', lead_id=lead['id']) }}" style="display: inline;">
+                                <button type="submit" class="btn btn-sm btn-restore" title="Restore this lead">
+                                    <i class="fas fa-undo me-1"></i> Restore
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <i class="fas fa-inbox"></i>
+        <div class="empty-state-title">No deleted leads</div>
+        <div class="empty-state-text">Your recycle bin is empty. Deleted leads will appear here.</div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -71,6 +71,11 @@
                 {% endif %}
                 
                 {% if current_user.role == 'admin' %}
+                <a href="{{ url_for('recycle_bin') }}" class="sidebar-link">
+                    <i class="fas fa-trash"></i>
+                    <span>Recycle Bin</span>
+                </a>
+                
                 <a href="{{ url_for('manage_stages') }}" class="sidebar-link">
                     <i class="fas fa-sitemap"></i>
                     <span>Pipeline Stages</span>

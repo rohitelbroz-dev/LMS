@@ -94,7 +94,8 @@ def role_required(*roles):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            if not current_user.is_authenticated or current_user.role not in roles:
+            # Only check role if user is authenticated (login_required will handle unauthenticated users)
+            if current_user.is_authenticated and current_user.role not in roles:
                 flash('You do not have permission to access this page.', 'danger')
                 return redirect(url_for('dashboard'))
             return f(*args, **kwargs)
@@ -860,7 +861,9 @@ def handle_disconnect():
 def index():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
+    # Show login page directly instead of redirecting
+    form = LoginForm()
+    return render_template('login.html', form=form)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -979,9 +982,9 @@ def dashboard():
                     SELECT MAX(deadline_at) FROM lead_assignments 
                     WHERE lead_id = l.id AND status = 'pending'
                 )
-            WHERE l.submitted_by_user_id = %s
+            WHERE l.submitted_by_user_id = %s AND l.is_deleted = %s
         '''
-        params = [current_user.id]
+        params = [current_user.id, False]
     elif current_user.role == 'bd_sales':
         base_query = '''
             SELECT l.*, u.name as submitter_name, la.deadline_at,
@@ -994,9 +997,9 @@ def dashboard():
                     SELECT MAX(deadline_at) FROM lead_assignments 
                     WHERE lead_id = l.id AND status = 'pending'
                 )
-            WHERE l.assigned_bd_id = %s
+            WHERE l.assigned_bd_id = %s AND l.is_deleted = %s
         '''
-        params = [current_user.id]
+        params = [current_user.id, False]
     else:
         base_query = '''
             SELECT l.*, u.name as submitter_name, la.deadline_at,
@@ -1009,9 +1012,9 @@ def dashboard():
                     SELECT MAX(deadline_at) FROM lead_assignments 
                     WHERE lead_id = l.id AND status = 'pending'
                 )
-            WHERE 1=1
+            WHERE l.is_deleted = %s
         '''
-        params = []
+        params = [False]
     
     if status_filter:
         base_query += ' AND l.status = %s'
@@ -1045,23 +1048,23 @@ def dashboard():
         count_query = '''
             SELECT COUNT(*) as total
             FROM leads l
-            WHERE l.submitted_by_user_id = %s
+            WHERE l.submitted_by_user_id = %s AND l.is_deleted = %s
         '''
-        count_params = [current_user.id]
+        count_params = [current_user.id, False]
     elif current_user.role == 'bd_sales':
         count_query = '''
             SELECT COUNT(*) as total
             FROM leads l
-            WHERE l.assigned_bd_id = %s
+            WHERE l.assigned_bd_id = %s AND l.is_deleted = %s
         '''
-        count_params = [current_user.id]
+        count_params = [current_user.id, False]
     else:
         count_query = '''
             SELECT COUNT(*) as total
             FROM leads l
-            WHERE 1=1
+            WHERE l.is_deleted = %s
         '''
-        count_params = []
+        count_params = [False]
     
     # Add same filters to count_query
     if status_filter:
@@ -1143,11 +1146,14 @@ def dashboard():
     active_targets = []
     for target in active_targets_raw:
         progress = compute_target_progress(target, cursor)
-        from datetime import datetime as dt
         try:
-            period_end = dt.strptime(target['period_end'], '%Y-%m-%d').date()
+            # Handle both date objects (from PostgreSQL) and strings
+            period_end = target['period_end']
+            if isinstance(period_end, str):
+                from datetime import datetime as dt
+                period_end = dt.strptime(period_end, '%Y-%m-%d').date()
             days_left = (period_end - date.today()).days
-        except:
+        except Exception as e:
             days_left = None
         
         active_targets.append({
@@ -3513,8 +3519,14 @@ def new_target():
     
     form = TargetForm()
     
-    # Always fetch managers (EM Team Leaders) to assign targets to
-    execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ('manager',))
+    # Determine which role to assign targets to based on current user's role
+    # Admin assigns to managers, EM Team Leader assigns to marketers
+    if current_user.role == 'admin':
+        target_role = 'manager'  # Admin assigns to EM Team Leaders
+    else:
+        target_role = 'marketer'  # EM Team Leader assigns to Email Marketers
+    
+    execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', (target_role,))
     
     assignees = cursor.fetchall()
     form.assignee.choices = [(u['id'], u['name']) for u in assignees]
@@ -3569,8 +3581,14 @@ def edit_target(target_id):
         return redirect(url_for('manage_targets'))
     
     # Get assignee choices for the form - do this BEFORE form instantiation
-    # Always fetch managers (EM Team Leaders) to assign targets to
-    execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', ('manager',))
+    # Determine which role to assign targets to based on current user's role
+    # Admin assigns to managers, EM Team Leader assigns to marketers
+    if current_user.role == 'admin':
+        target_role = 'manager'  # Admin assigns to EM Team Leaders
+    else:
+        target_role = 'marketer'  # EM Team Leader assigns to Email Marketers
+    
+    execute_query(cursor, 'SELECT id, name FROM users WHERE role = %s ORDER BY name', (target_role,))
     
     assignees = cursor.fetchall()
     assignee_choices = [(u['id'], u['name']) for u in assignees]
@@ -3931,7 +3949,94 @@ print('APScheduler started:')
 print('  - Checking for overdue leads every 30 minutes')
 print('  - Checking for activity reminders every hour')
 
-@app.after_request
+@app.route('/leads/<int:lead_id>/delete', methods=['POST'])
+@login_required
+@role_required('admin', 'manager')
+@retry_on_db_lock()
+def delete_lead(lead_id):
+    """Soft delete a lead - only admin and manager can delete"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Get the lead
+    execute_query(cursor, 'SELECT * FROM leads WHERE id = %s AND is_deleted = %s', (lead_id, False))
+    lead = cursor.fetchone()
+    
+    if not lead:
+        flash('Lead not found.', 'danger')
+        conn.close()
+        return redirect(url_for('dashboard'))
+    
+    # Soft delete the lead
+    execute_query(cursor, '''
+        UPDATE leads 
+        SET is_deleted = %s, deleted_at = %s, deleted_by_id = %s 
+        WHERE id = %s
+    ''', (True, datetime.utcnow(), current_user.id, lead_id))
+    
+    safe_commit(conn, context="delete_lead")
+    conn.close()
+    
+    flash(f'Lead "{lead["full_name"]}" has been deleted. You can restore it from the Recycle Bin.', 'success')
+    return redirect(request.referrer or url_for('dashboard'))
+
+
+@app.route('/recycle-bin')
+@login_required
+@role_required('admin')
+@retry_on_db_lock()
+def recycle_bin():
+    """Display deleted leads in recycle bin - admin only"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Get all deleted leads
+    execute_query(cursor, '''
+        SELECT l.id, l.full_name, l.email, l.phone, l.company, l.deleted_at, u.name as deleted_by_name
+        FROM leads l
+        JOIN users u ON l.deleted_by_id = u.id
+        WHERE l.is_deleted = %s
+        ORDER BY l.deleted_at DESC
+    ''', (True,))
+    
+    deleted_leads = cursor.fetchall()
+    conn.close()
+    
+    return render_template('recycle_bin.html', deleted_leads=deleted_leads)
+
+
+@app.route('/leads/<int:lead_id>/restore', methods=['POST'])
+@login_required
+@role_required('admin')
+@retry_on_db_lock()
+def restore_lead(lead_id):
+    """Restore a deleted lead from recycle bin - admin only"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Get the deleted lead
+    execute_query(cursor, 'SELECT id, full_name FROM leads WHERE id = %s AND is_deleted = %s', (lead_id, True))
+    lead = cursor.fetchone()
+    
+    if not lead:
+        flash('Lead not found in recycle bin.', 'danger')
+        conn.close()
+        return redirect(url_for('recycle_bin'))
+    
+    # Restore the lead
+    execute_query(cursor, '''
+        UPDATE leads 
+        SET is_deleted = %s, deleted_at = NULL, deleted_by_id = NULL 
+        WHERE id = %s
+    ''', (False, lead_id))
+    
+    conn.commit()
+    conn.close()
+    
+    flash(f'Lead "{lead["full_name"]}" has been restored.', 'success')
+    return redirect(url_for('recycle_bin'))
+
+
 def add_cache_headers(response):
     if request.path.startswith('/static/'):
         response.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours
